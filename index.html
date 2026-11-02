@@ -246,6 +246,7 @@
   .fl:last-child { border-bottom:0; }
   .fl .sp { margin-left:auto; display:flex; gap:8px; align-items:center; color: var(--muted); font-size:11px; }
   svg text { font-family: inherit; }
+  .ov .bx .msg b { display: inline; margin: 0; }
 </style>
 </head>
 <body>
@@ -271,6 +272,12 @@
 <input type="file" id="fileSales" multiple accept=".csv,.tsv,.txt,.xlsx,.xlsm" hidden>
 <input type="file" id="fileMaster" multiple accept=".xlsx,.xlsm" hidden>
 <div class="ov" id="ov"><div class="bx"><b id="ovT">작업 중…</b><small id="ovS"></small><div class="bar"><i id="ovB"></i></div></div></div>
+<div class="ov modal" id="saveDlg"><div class="bx">
+  <b style="font-size:15px">데이터 포함 파일로 저장</b>
+  <div class="fld" style="margin:14px 0 10px"><label>파일 이름</label><div style="display:flex;align-items:center;gap:6px"><input id="saveName" style="flex:1;height:36px;border:1px solid var(--line);border-radius:6px;padding:0 10px"><span style="color:var(--muted)">.html</span></div></div>
+  <div class="msg warn" style="font-size:11.5px;line-height:1.7;margin:0 0 16px">이 브라우저는 저장 위치 선택 창을 지원하지 않아 브라우저의 <b>다운로드 폴더</b>에 저장됩니다.<br>저장할 때마다 위치를 고르려면 크롬 <b>설정 → 다운로드 → '다운로드 전에 각 파일의 저장 위치 확인'</b>을 켜 주세요. (엣지: 설정 → 다운로드 → '각 파일을 저장할 위치 확인')</div>
+  <div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn" id="saveCancel">취소</button><button class="btn pri" id="saveOk">저장</button></div>
+</div></div>
 <div class="ov modal" id="help"><div class="bx">
   <b style="font-size:15px">사용 안내</b>
   <ul>
@@ -898,29 +905,47 @@ async function decodeSnap(txt) {
   return JSON.parse(out);
 }
 function setSaveInfo(t) { const el = $('#saveInfo'); if (el) el.textContent = t; }
+const SAVE_NAME = '쿠팡로켓매출리포트';
+const cleanName = (n) => { n = String(n || '').trim().replace(/[\\/:*?"<>|]/g, '_').replace(/\.html?$/i, ''); return (n || SAVE_NAME) + '.html'; };
+function askFileName() {
+  return new Promise((res) => {
+    const dlg = $('#saveDlg'), inp = $('#saveName'); inp.value = SAVE_NAME; dlg.classList.add('on'); setTimeout(() => { inp.focus(); inp.select(); }, 30);
+    const done = (v) => { dlg.classList.remove('on'); $('#saveOk').onclick = $('#saveCancel').onclick = inp.onkeydown = null; res(v); };
+    $('#saveOk').onclick = () => done(cleanName(inp.value)); $('#saveCancel').onclick = () => done(null);
+    inp.onkeydown = (e) => { if (e.key === 'Enter') done(cleanName(inp.value)); else if (e.key === 'Escape') done(null); };
+  });
+}
+async function buildSnapshotHtml() {
+  const snap = packState(); const enc = await encodeSnap(snap);
+  const re = new RegExp('<script id="' + SNAP_ID + '"[^>]*>[^<]*</' + 'script>\\s*', 'g');
+  let html = PRISTINE.replace(re, '');
+  const tag = '<script id="' + SNAP_ID + '" type="application/octet-stream">' + enc + '</' + 'script>\n';
+  const at = html.indexOf('</' + 'head>'); html = html.slice(0, at) + tag + html.slice(at);
+  return { snap, blob: new Blob([html], { type: 'text/html;charset=utf-8' }) };
+}
 async function saveSnapshot() {
   if (!S.sales.length && !hasMaster()) { alert('저장할 데이터가 없습니다. 먼저 파일을 업로드하세요.'); return; }
-  overlay(true, '저장 파일 만드는 중…', '데이터를 압축하고 있습니다', 40); await tick();
-  let html, snap;
-  try {
-    snap = packState(); const enc = await encodeSnap(snap);
-    const re = new RegExp('<script id="' + SNAP_ID + '"[^>]*>[^<]*</' + 'script>\\s*', 'g');
-    html = PRISTINE.replace(re, '');
-    const tag = '<script id="' + SNAP_ID + '" type="application/octet-stream">' + enc + '</' + 'script>\n';
-    const at = html.indexOf('</' + 'head>'); html = html.slice(0, at) + tag + html.slice(at);
-  } finally { overlay(false); }
-  const t = new Date(snap.savedAt); const stamp = t.getFullYear() + pad2(t.getMonth() + 1) + pad2(t.getDate()) + '_' + pad2(t.getHours()) + pad2(t.getMinutes());
-  const name = '로켓매출리포트_' + stamp + '.html'; const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  let saved = false;
+  // 1) 클릭 직후 바로 저장 위치 선택 창 (브라우저가 지원하는 경우)
+  let handle = null, name = SAVE_NAME + '.html';
   if (window.showSaveFilePicker) {
-    try { const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'HTML 파일', accept: { 'text/html': ['.html'] } }] }); const w = await h.createWritable(); await w.write(blob); await w.close(); saved = true; }
-    catch (e) { if (e && e.name === 'AbortError') return; }
+    try { handle = await window.showSaveFilePicker({ id: 'rocket-sales-report', suggestedName: name, types: [{ description: 'HTML 파일', accept: { 'text/html': ['.html'] } }] }); }
+    catch (e) { if (e && e.name === 'AbortError') return; console.warn('저장 위치 선택 창을 쓸 수 없어 다운로드로 저장합니다', e); handle = null; }
   }
-  if (!saved) download(name, blob);
+  // 2) 지원하지 않으면 파일명만 입력받아 다운로드
+  if (!handle) { name = await askFileName(); if (!name) return; }
+  else name = handle.name || name;
+  overlay(true, '저장 중…', '데이터를 압축하고 있습니다', 40); await tick();
+  let snap, blob;
+  try {
+    ({ snap, blob } = await buildSnapshotHtml());
+    if (handle) { const w = await handle.createWritable(); await w.write(blob); await w.close(); }
+    else download(name, blob);
+  } catch (e) { overlay(false); alert('저장하지 못했습니다: ' + (e && e.message || e)); return; }
+  overlay(false);
   await DB.set('snapId', snap.id);   // 이 PC에서 저장 파일을 다시 열어도 묻지 않도록
-  const sz = blob.size / 1048576;
+  const t = new Date(snap.savedAt); const sz = blob.size / 1048576;
   setSaveInfo('저장됨 ' + pad2(t.getHours()) + ':' + pad2(t.getMinutes()));
-  alert('저장했습니다 (' + (sz < 1 ? Math.round(blob.size / 1024) + 'KB' : sz.toFixed(1) + 'MB') + ').\n\n이 파일을 다른 컴퓨터로 옮겨 열면 업로드 없이 같은 내용이 보입니다.' + (saved ? '' : '\n(브라우저의 다운로드 폴더에 저장되었습니다)'));
+  alert('"' + name + '" 저장 완료 (' + (sz < 1 ? Math.round(blob.size / 1024) + 'KB' : sz.toFixed(1) + 'MB') + ')\n' + (handle ? '선택한 위치에 저장했습니다.' : '브라우저의 다운로드 폴더(또는 설정한 저장 위치)에 저장했습니다.') + '\n\n이 파일을 다른 컴퓨터로 옮겨 열면 업로드 없이 같은 내용이 보입니다.');
 }
 async function loadSnapshotIfAny() {
   const el = document.getElementById(SNAP_ID); if (!el || !el.textContent.trim()) return;
