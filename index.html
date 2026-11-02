@@ -276,7 +276,7 @@
     <li><b>매출 데이터</b>: 쿠팡 SALES_ANALYSIS_DAILY_PERFORMANCE CSV를 올립니다. 파일명은 상관없고, 파일에 있는 날짜의 기존 데이터는 새 파일로 교체됩니다(여러 날짜 누적).</li>
     <li><b>원본 데이터(자재마스터)</b>: PRE(일반)·LUX 두 파일을 올립니다. 파일명이 달라도 내용으로 PRE/LUX를 자동 구분하고, 같은 구분의 파일을 다시 올리면 최신 파일로 교체됩니다.</li>
     <li>매출의 SKU ID를 원본의 SKU ID와 매칭해 브랜드를 붙입니다. 원본에 없는 SKU는 <b>N/A</b>로 표기되며 <b>N/A 점검</b> 메뉴와 대시보드 상단 경고에 계속 표시됩니다. 최신 원본을 올리면 자동으로 해소됩니다.</li>
-    <li><b>브랜드명 변환</b>(데이터 관리)에서 원본 브랜드명을 보고서용 이름(예: VONIN→보닌)과 상위 그룹(TFS.* → 더페이스샵)으로 바꿀 수 있습니다.</li>
+    <li><b>브랜드 분류</b>(데이터 관리)에서 원본 브랜드마다 <b>대분류</b>(보고서 브랜드명)와 <b>하위 그룹</b>을 정하고 <b>적용</b>을 누르면 모든 탭에 반영됩니다. 하위 그룹을 비우면 대분류로만 분류됩니다.</li>
     <li>데이터는 이 PC의 브라우저(IndexedDB)에만 저장됩니다.</li>
   </ul>
   <div style="text-align:right"><button class="btn" id="helpClose">닫기</button></div>
@@ -353,15 +353,26 @@ const DB = {
 
 /* ============================== state ============================== */
 // 원본 브랜드명 → [보고서 브랜드명, 상위그룹]  (그룹 빈값이면 브랜드명 자체)
-const DEFAULT_ALIAS = {
-  'Isa Knox': ['이자녹스', ''], 'VONIN': ['보닌', ''], 'LacVert': ['라끄베르', ''],
-  'TFS.CareZone': ['케어존', '케어존'], 'TFS.TPSY': ['TPSY', 'TPSY'], 'TFS.어글리러블리': ['어글리러블리', '어글리러블리'],
-  'TFS.색조': ['TFS.fmgt', '더페이스샵'], 'LG PraL GLASSL': ['LG Pra.L', ''], 'LG PraL SUPERF': ['LG Pra.L', ''],
+// 원본 브랜드 -> { big: 대분류, sub: 하위 그룹 }  (하위 그룹이 비어 있으면 대분류로만 분류)
+const DEFAULT_MAP = {
+  'Isa Knox': { big: '이자녹스', sub: '' }, 'VONIN': { big: '보닌', sub: '' }, 'LacVert': { big: '라끄베르', sub: '' },
+  'TFS.CareZone': { big: '케어존', sub: '' }, 'TFS.TPSY': { big: 'TPSY', sub: '' }, 'TFS.어글리러블리': { big: '어글리러블리', sub: '' },
+  'TFS.색조': { big: '더페이스샵', sub: 'TFS.fmgt' }, 'LG PraL GLASSL': { big: 'LG Pra.L', sub: '' }, 'LG PraL SUPERF': { big: 'LG Pra.L', sub: '' },
 };
+const clone = (o) => JSON.parse(JSON.stringify(o));
+// 원본 브랜드의 현재 분류 (사용자 지정 > 기본 규칙: TFS.* 는 더페이스샵 하위)
+function effMap(raw) {
+  const m = S.map[raw]; if (m) return { big: m.big || raw, sub: m.sub || '' };
+  if (/^TFS\./.test(raw)) return { big: '더페이스샵', sub: raw };
+  return { big: raw, sub: '' };
+}
+// 이전 버전 저장값([보고서 브랜드명, 상위 그룹]) 변환
+function fromOldAlias(a) { const o = {}; for (const k in a) { const [n, g] = a[k]; o[k] = (g && g !== n) ? { big: g, sub: n } : { big: n || k, sub: '' }; } return o; }
 const S = {
   sales: [],            // 일자별 매출 행
   masters: {},          // {PRE:{file,at,rows:[...]}, LUX:{...}}
-  alias: JSON.parse(JSON.stringify(DEFAULT_ALIAS)),
+  map: clone(DEFAULT_MAP),   // 브랜드 분류
+  mapDraft: null,           // 적용 전 편집값
   sk: new Map(),        // sku -> master entry
   view: 'dash',
   f: { start: '', end: '', group: '', unit: 'day', q: '' },
@@ -465,7 +476,7 @@ function rebuildIndex() {
   const info = new Map(), csvSeg = new Map();   // 브랜드 -> {g, seg}, CSV브랜드 -> seg
   for (const r of S.sales) {
     const e = S.sk.get(r.sku);
-    if (e) { const m = e.r; const a = S.alias[m.brand]; r.b = a ? a[0] : m.brand; r.g = a ? (a[1] || r.b) : (/^TFS\./.test(m.brand) ? '더페이스샵' : r.b); r.st = m.st; r.na = false; r.man = false; r.gift = false; r.seg = e.slot;
+    if (e) { const m = e.r; const em = effMap(m.brand); r.g = em.big; r.b = em.sub || em.big; r.st = m.st; r.na = false; r.man = false; r.gift = false; r.seg = e.slot;
       if (!info.has(r.b)) info.set(r.b, { g: r.g, seg: e.slot }); if (r.cb && !csvSeg.has(r.cb)) csvSeg.set(r.cb, e.slot); }
   }
   S.brandInfo = info; S.csvSeg = csvSeg;
@@ -516,7 +527,7 @@ function filterBar(opts = {}) {
   return '<div class="card filters">' +
     '<div class="fld"><label>시작일</label><input type="date" id="fS" value="' + f.start + '"></div><div class="range">~</div>' +
     '<div class="fld"><label>종료일</label><input type="date" id="fE" value="' + f.end + '"></div>' +
-    '<div class="fld"><label>브랜드(그룹)</label><select id="fG"><option value="">전체</option>' + gs.map((g) => '<option' + (f.group === g ? ' selected' : '') + '>' + esc(g) + '</option>').join('') + '</select></div>' +
+    '<div class="fld"><label>브랜드(대분류)</label><select id="fG"><option value="">전체</option>' + gs.map((g) => '<option' + (f.group === g ? ' selected' : '') + '>' + esc(g) + '</option>').join('') + '</select></div>' +
     (opts.unit ? '<div class="fld"><label>집계 단위</label><div class="seg"><button data-u="day" class="' + (f.unit === 'day' ? 'on' : '') + '">일별</button><button data-u="month" class="' + (f.unit === 'month' ? 'on' : '') + '">월별</button></div></div>' : '') +
     '<button class="btn pri" id="fGo">조회하기</button></div>';
 }
@@ -586,7 +597,7 @@ function vDash() {
     '<div class="row2"><div class="card ch"><div class="hd"><div><h3>일별 매출 추이</h3><p class="d">막대 = GMV · 선 = AMV (주말은 연한 색)</p></div></div>' + dailyChart(cur, f.start, f.end) + '</div>' +
     '<div class="card ops"><h3 style="margin:0 0 6px;font-size:15px">운영 지표</h3>' +
     '<div class="it">활성 SKU<b>' + fmt(t.skus) + '<small>개</small></b></div><div class="it">객단가(GMV/주문)<b>' + fmt(t.orders ? t.gmv / t.orders : 0) + '<small>원</small></b></div><div class="it">반품 수량<b>' + fmt(t.ret) + '<small>개</small></b></div><div class="it">조회수<b>' + fmt(t.views) + '</b></div><div class="it">N/A SKU<b class="' + (naSummary().length ? 'up' : '') + '">' + naSummary().length + '<small>개</small></b></div></div></div>' +
-    '<div class="card ch" style="margin-bottom:18px"><h3>브랜드(그룹)별 GMV</h3><p class="d">상위 12개 · 더페이스샵은 TFS.* 합산</p>' + barList(byB.slice(0, 12), 'gmv') + '</div>' +
+    '<div class="card ch" style="margin-bottom:18px"><h3>브랜드(대분류)별 GMV</h3><p class="d">상위 12개 · 하위 그룹은 대분류로 합산</p>' + barList(byB.slice(0, 12), 'gmv') + '</div>' +
     top30HTML(cur, t) + segGmvHTML(cur, t) +
     '<div class="card ins" style="margin-top:18px"><h3>인사이트</h3><p class="d">자동 요약</p><ul>' + ins.map(([k, v]) => '<li><i>' + k + '</i><span>' + v + '</span></li>').join('') + '</ul></div>';
 }
@@ -638,7 +649,7 @@ function vBrand() {
   for (const [sk, nm] of [['PRE', 'PRE 프리미엄 합계'], ['LUX', 'LUX 럭셔리 합계'], ['', '미분류(N/A·사은품) 합계']]) { const a = sg.get(sk); if (!a) continue;
     body += '<tr class="sum"><td class="l fc' + (sk === '' ? ' na' : '') + '">' + nm + '</td><td>' + fmt(a.tot.gmv) + '</td><td>' + pct(a.tot.gmv / (all.gmv || 1) * 100) + '</td>' + keys.map((k) => cell(a.per, k)).join('') + '</tr>'; }
   body += '<tr class="sum"><td class="l fc">전체 합계</td><td>' + fmt(all.gmv) + '</td><td>100%</td>' + keys.map((k) => cell(allPer, k)).join('') + '</tr>';
-  return '<div class="ph"><div><div class="eyebrow">BRAND REPORT</div><h1>브랜드별 매출</h1><p>원본 SKU 매칭 기준 · 더페이스샵은 TFS 세부 라인별로 분리 (GMV, 원)</p></div><div class="acts"><button class="btn" id="xl">엑셀 다운로드</button><button class="btn" id="csv">CSV</button></div></div>' +
+  return '<div class="ph"><div><div class="eyebrow">BRAND REPORT</div><h1>브랜드별 매출</h1><p>원본 SKU 매칭 기준 · 대분류 아래 하위 그룹별로 분리 (GMV, 원)</p></div><div class="acts"><button class="btn" id="xl">엑셀 다운로드</button><button class="btn" id="csv">CSV</button></div></div>' +
     naBanner() + filterBar({ unit: 1 }) +
     '<div class="card tc"><div class="th"><div><h3>브랜드 × ' + (f.unit === 'month' ? '월' : '일') + '별 GMV</h3><p class="d">N/A = 원본 데이터에 SKU가 없는 상품</p></div></div><div class="tw"><table class="t"><thead><tr><th class="l fc">브랜드</th><th>합계</th><th>비중</th>' + keys.map((k) => '<th>' + lab(k) + '</th>').join('') + '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
 }
@@ -691,6 +702,27 @@ function vNa() {
       man.map((r) => '<tr><td class="l k">' + r.sku + '</td><td class="l" title="' + esc(r.name) + '">' + esc(r.name) + '</td><td class="l">' + esc(r.cb || '-') + '</td><td class="l k">' + esc(r.b) + '</td><td class="l">' + r.seg + '</td><td class="em">' + fmt(r.gmv) + '</td><td class="c"><button class="btn sm red" data-unman="' + r.sku + '">해제</button></td></tr>').join('') + '</tbody></table></div></div>' : '');
 }
 
+function brandMapCard(raws) {
+  if (!raws.length) return '<div class="card box"><h3>브랜드 분류</h3><p class="note">원본을 업로드하면 표시됩니다.</p></div>';
+  if (!S.mapDraft) S.mapDraft = Object.fromEntries(raws.map((b) => [b, effMap(b)]));
+  const D = S.mapDraft; const cur = (b) => effMap(b);
+  const disp = (b) => { const e = cur(b); return e.sub || e.big; };
+  const rows = raws.slice().sort((a, b) => (D[a] || cur(a)).big.localeCompare((D[b] || cur(b)).big, 'ko') || disp(a).localeCompare(disp(b), 'ko'));
+  const changed = raws.filter((b) => { const d = D[b] || cur(b), e = cur(b); return (d.big || b) !== e.big || (d.sub || '') !== e.sub; }).length;
+  const bigs = [...new Set(raws.map((b) => (D[b] || cur(b)).big))].sort((a, b) => a.localeCompare(b, 'ko'));
+  return '<div class="card box"><div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap"><div><h3>브랜드 분류</h3><p class="note" style="margin:-6px 0 12px;line-height:1.7">' +
+    '<b>대분류</b>: 보고서에 표시할 브랜드명 (같은 대분류끼리 합산) · <b>하위 그룹</b>: 대분류 안에 들어가는 세부 브랜드명<br>하위 그룹을 비워 두면 그 브랜드는 <b>대분류로만</b> 분류됩니다. 수정 후 <b>적용</b>을 눌러야 모든 탭에 반영됩니다.</p></div>' +
+    '<div style="margin-left:auto;display:flex;gap:8px;align-items:center">' + (changed ? '<span class="pill na">미적용 변경 ' + changed + '건</span>' : '') + '<button class="btn sm" id="mReset">기본값으로</button><button class="btn sm" id="mUndo"' + (changed ? '' : ' disabled') + '>변경 취소</button><button class="btn pri sm" id="mApply"' + (changed ? '' : ' disabled') + '>적용</button></div></div>' +
+    '<datalist id="dlBig">' + bigs.map((b) => '<option value="' + esc(b) + '">').join('') + '</datalist>' +
+    '<table class="p"><thead><tr><th>원본 브랜드 <span style="font-weight:400;color:var(--muted)">(현재 표기 / 원본 파일 표기)</span></th><th>대분류</th><th>하위 그룹</th><th>보고서 표기</th></tr></thead><tbody>' +
+    rows.map((b) => { const d = D[b] || cur(b); const name = disp(b); const big = d.big || b, sub = d.sub || '';
+      const dirty = big !== cur(b).big || sub !== cur(b).sub;
+      return '<tr' + (dirty ? ' style="background:#FFF8E6"' : '') + '><td><b>' + esc(name) + '</b>' + (name !== b ? ' <span style="color:var(--muted)">(' + esc(b) + ')</span>' : '') + '</td>' +
+        '<td><input data-mb="big" data-raw="' + esc(b) + '" list="dlBig" value="' + esc(d.big) + '" placeholder="' + esc(b) + '"></td>' +
+        '<td><input data-mb="sub" data-raw="' + esc(b) + '" value="' + esc(d.sub) + '" placeholder="(대분류로만 분류)"></td>' +
+        '<td class="mprev" data-raw="' + esc(b) + '">' + esc(big) + (sub ? ' <span style="color:var(--muted)">›</span> ' + esc(sub) : '') + '</td></tr>'; }).join('') +
+    '</tbody></table></div>';
+}
 function vUpload() {
   const ds = dates(); const na = S.sales.length ? naSummary().length : 0;
   const mrow = (s) => { const m = S.masters[s]; return '<div class="fl"><span class="pill ok">' + s + '</span><b>' + (m ? esc(m.file) : '<span style="color:var(--muted);font-weight:400">미업로드</span>') + '</b><span class="sp">' + (m ? fmt(m.rows.length) + ' SKU · ' + m.at.slice(0, 16).replace('T', ' ') + '<button class="btn sm red" data-dm="' + s + '">삭제</button>' : '') + '</span></div>'; };
@@ -703,8 +735,7 @@ function vUpload() {
     '<div class="ft"><span>데이터는 이 브라우저에만 저장되며 서버로 전송되지 않습니다.</span></div></div>' +
     '<div class="grid2"><div class="card box"><h3>원본 데이터 현황</h3>' + mrow('PRE') + mrow('LUX') + '<p class="note">N/A SKU: <b class="' + (na ? 'up' : '') + '">' + na + '개</b> ' + (na ? '— 최신 원본을 올려 보세요.' : '') + '</p></div>' +
     '<div class="card box"><h3>매출 데이터 현황</h3><div class="fl"><b>' + fmt(S.sales.length) + '</b> 행 · ' + ds.length + '일 · SKU ' + fmt(new Set(S.sales.map((r) => r.sku)).size) + '개<span class="sp"><button class="btn sm red" id="clrS"' + (S.sales.length ? '' : ' disabled') + '>매출 전체 삭제</button></span></div><div style="margin-top:8px">' + ds.slice(-40).map((d) => '<span class="chip">' + d.slice(5) + '</span>').join('') + '</div></div></div>' +
-    '<div class="card box"><h3>브랜드명 변환</h3><p class="note" style="margin:-6px 0 12px">원본의 브랜드명을 보고서 이름/상위 그룹으로 바꿉니다. (예: VONIN → 보닌, TFS.* → 더페이스샵 하위) 비워 두면 원본 이름 그대로 사용합니다.</p><table class="p"><thead><tr><th>원본 브랜드</th><th>보고서 브랜드명</th><th>상위 그룹</th></tr></thead><tbody>' +
-    (nameSet.length ? nameSet.map((b) => { const a = S.alias[b] || ['', '']; const ph = /^TFS\./.test(b) ? '더페이스샵(자동)' : ''; return '<tr><td>' + esc(b) + '</td><td><input data-a="0" data-b="' + esc(b) + '" value="' + esc(a[0]) + '" placeholder="' + esc(b) + '"></td><td><input data-a="1" data-b="' + esc(b) + '" value="' + esc(a[1]) + '" placeholder="' + ph + '"></td></tr>'; }).join('') : '<tr><td colspan="3" style="color:var(--muted)">원본을 업로드하면 표시됩니다.</td></tr>') + '</tbody></table><div style="margin-top:12px"><button class="btn sm" id="aReset">기본값으로 되돌리기</button></div></div>';
+    brandMapCard(nameSet);
 }
 
 /* ============================== render ============================== */
@@ -746,16 +777,24 @@ function bind() {
   document.querySelectorAll('[data-unman]').forEach((b) => b.onclick = async () => { delete S.manual[b.dataset.unman]; await reapply(); });
   const mc = $('#manClr'); if (mc) mc.onclick = async () => { if (!confirm('수동 지정을 모두 해제할까요?')) return; S.manual = {}; await reapply(); };
   const cs = $('#clrS'); if (cs) cs.onclick = async () => { if (!confirm('저장된 매출 데이터를 모두 삭제할까요?')) return; S.sales = []; await persist(); render(); };
-  document.querySelectorAll('input[data-a]').forEach((i) => i.onchange = async () => {
-    const b = i.dataset.b; const a = S.alias[b] ? S.alias[b].slice() : ['', '']; a[+i.dataset.a] = i.value.trim();
-    if (!a[0] && !a[1]) delete S.alias[b]; else { if (!a[0]) a[0] = b; S.alias[b] = a; }
-    await persist(); rebuildIndex(); render();
+  document.querySelectorAll('input[data-mb]').forEach((i) => i.oninput = () => {
+    const raw = i.dataset.raw; const d = S.mapDraft[raw] || (S.mapDraft[raw] = effMap(raw)); d[i.dataset.mb] = i.value.trim();
+    const pv = document.querySelector('.mprev[data-raw="' + CSS.escape(raw) + '"]'); if (pv) pv.innerHTML = esc(d.big || raw) + (d.sub ? ' <span style="color:var(--muted)">›</span> ' + esc(d.sub) : '');
+    const tr = i.closest('tr'); const e = effMap(raw); tr.style.background = ((d.big || raw) !== e.big || (d.sub || '') !== e.sub) ? '#FFF8E6' : '';
+    const n = Object.keys(S.mapDraft).filter((b) => { const x = S.mapDraft[b], y = effMap(b); return (x.big || b) !== y.big || (x.sub || '') !== y.sub; }).length;
+    const ap = $('#mApply'), un = $('#mUndo'); if (ap) ap.disabled = !n; if (un) un.disabled = !n;
   });
-  const ar = $('#aReset'); if (ar) ar.onclick = async () => { S.alias = JSON.parse(JSON.stringify(DEFAULT_ALIAS)); await persist(); rebuildIndex(); render(); };
+  const mA = $('#mApply'); if (mA) mA.onclick = async () => {
+    for (const raw in S.mapDraft) { const d = S.mapDraft[raw]; S.map[raw] = { big: (d.big || '').trim() || raw, sub: (d.sub || '').trim() }; }
+    S.mapDraft = null; S.f.group = ''; await persist(); rebuildIndex(); render();
+    const box = document.createElement('div'); box.className = 'msg ok'; box.textContent = '✓ 브랜드 분류를 적용했습니다. 대시보드·브랜드별 매출·SKU 상세·N/A 점검에 반영됩니다.'; $('#page').insertBefore(box, $('#page').children[1] || null);
+  };
+  const mU = $('#mUndo'); if (mU) mU.onclick = () => { S.mapDraft = null; render(); };
+  const mR = $('#mReset'); if (mR) mR.onclick = () => { if (!confirm('기본 분류로 되돌릴까요? (적용을 눌러야 반영됩니다)')) return; const raws = Object.keys(S.mapDraft || {}); const keep = S.map; S.map = clone(DEFAULT_MAP); S.mapDraft = Object.fromEntries(raws.map((b) => [b, effMap(b)])); S.map = keep; render(); };
 }
 
 /* ============================== 업로드 처리 ============================== */
-async function persist() { await DB.set('sales', S.sales.map((r) => { const { b, g, st, na, mc, man, seg, gift, ...o } = r; return o; })); await DB.set('masters', S.masters); await DB.set('alias', S.alias); await DB.set('manual', S.manual); }
+async function persist() { await DB.set('sales', S.sales.map((r) => { const { b, g, st, na, mc, man, seg, gift, ...o } = r; return o; })); await DB.set('masters', S.masters); await DB.set('brandmap', S.map); await DB.set('manual', S.manual); }
 async function handleFiles(files, hint) {
   if (!files.length) return; const log = []; let hasNew = false;
   try {
@@ -778,6 +817,7 @@ async function handleFiles(files, hint) {
         log.push(['e', f.name + ' — ' + e.message]);
       }
     }
+    S.mapDraft = null;
     S.sales.sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
     overlay(true, '매칭/저장 중…', '', 90); await tick();
     rebuildIndex(); await persist();
@@ -816,7 +856,7 @@ function exportCsv() {
 $('#menuBtn').onclick = () => $('#side').classList.toggle('open');
 $('#helpBtn').onclick = () => $('#help').classList.add('on'); $('#helpClose').onclick = () => $('#help').classList.remove('on');
 (async function init() {
-  try { await DB.open(); const s = await DB.get('sales'); const m = await DB.get('masters'); const a = await DB.get('alias'); const mn = await DB.get('manual'); if (mn) S.manual = mn; if (s) S.sales = s; if (m) S.masters = m; if (a) S.alias = a; } catch (e) { console.warn('저장소를 사용할 수 없습니다', e); }
+  try { await DB.open(); const s = await DB.get('sales'); const m = await DB.get('masters'); const bm = await DB.get('brandmap'); const a = bm ? null : await DB.get('alias'); const mn = await DB.get('manual'); if (mn) S.manual = mn; if (s) S.sales = s; if (m) S.masters = m; if (bm) S.map = bm; else if (a) S.map = fromOldAlias(a); } catch (e) { console.warn('저장소를 사용할 수 없습니다', e); }
   rebuildIndex(); S.view = S.sales.length ? 'dash' : 'upload'; render();
 })();
 </script>
