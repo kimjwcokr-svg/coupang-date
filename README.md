@@ -1,0 +1,12 @@
+# 쿠팡 로켓배송 매출 리포트 (웹앱)
+
+`index.html` 한 파일로 동작하는 브라우저 로컬 웹앱입니다 (서버 전송 없음, 데이터는 IndexedDB 저장).
+
+- 매출 데이터: `SALES_ANALYSIS_DAILY_PERFORMANCE_*.csv` (파일명 무관, 날짜 단위로 교체·누적)
+- 원본 데이터: PRE / LUX 자재마스터 xlsx (내용으로 자동 구분, 같은 구분은 최신 파일로 교체)
+- SKU ID로 원본과 매칭해 브랜드 부여, 원본에 없으면 **N/A**로 표기 (대시보드 경고 + N/A 점검 메뉴)
+- 화면: 데이터 관리 / 대시보드 / 브랜드별 매출 / SKU 상세 / N/A 점검, 엑셀·CSV 다운로드
+
+## 수정/빌드
+`src/app.template.html`을 수정한 뒤 `python3 build.py` → `index.html` 재생성
+(`src/reference.css` = 쿠팡광고보고서 v2 스타일, `vendor/xlsx.full.min.js` = SheetJS 0.18.5 내장).
