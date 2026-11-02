@@ -50,7 +50,7 @@
     <div class="topbar">
       <button class="menu-btn" id="menuBtn">☰</button>
       <div class="crumb">워크스페이스<span>/</span><b id="crumb">대시보드</b></div>
-      <div class="right"><span class="local">브라우저 로컬 처리</span><button class="link" id="helpBtn">사용 안내 ↗</button><div class="me">JY</div></div>
+      <div class="right"><span class="local" id="saveInfo">브라우저 로컬 처리</span><button class="btn pri sm" id="saveBtn" title="데이터를 포함한 html 파일로 저장">💾 저장</button><button class="link" id="helpBtn">사용 안내 ↗</button><div class="me">JY</div></div>
     </div>
     <div class="scroll" id="scroll">
       <div class="page" id="page"></div>
@@ -68,7 +68,7 @@
     <li><b>원본 데이터(자재마스터)</b>: PRE(일반)·LUX 두 파일을 올립니다. 파일명이 달라도 내용으로 PRE/LUX를 자동 구분하고, 같은 구분의 파일을 다시 올리면 최신 파일로 교체됩니다.</li>
     <li>매출의 SKU ID를 원본의 SKU ID와 매칭해 브랜드를 붙입니다. 원본에 없는 SKU는 <b>N/A</b>로 표기되며 <b>N/A 점검</b> 메뉴와 대시보드 상단 경고에 계속 표시됩니다. 최신 원본을 올리면 자동으로 해소됩니다.</li>
     <li><b>브랜드 분류</b>(데이터 관리)에서 원본 브랜드마다 <b>대분류</b>(보고서 브랜드명)와 <b>하위 그룹</b>을 정하고 <b>적용</b>을 누르면 모든 탭에 반영됩니다. 하위 그룹을 비우면 대분류로만 분류됩니다.</li>
-    <li>데이터는 이 PC의 브라우저(IndexedDB)에만 저장됩니다.</li>
+    <li>데이터는 이 PC의 브라우저(IndexedDB)에 저장됩니다. 상단 <b>💾 저장</b>을 누르면 데이터가 포함된 html 파일이 만들어지고, 그 파일을 다른 컴퓨터로 옮겨 열면 업로드 없이 같은 내용이 보입니다.</li>
   </ul>
   <div style="text-align:right"><button class="btn" id="helpClose">닫기</button></div>
 </div></div>
@@ -76,6 +76,8 @@
 <!--XLSX-->
 <script>
 'use strict';
+// 저장 기능용: 화면이 그려지기 전 이 html 원본을 확보
+const PRISTINE = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
 /* ============================== utils ============================== */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -631,13 +633,85 @@ function exportCsv() {
   download('report_' + S.view + '.csv', new Blob([toCSV(rows)], { type: 'text/csv;charset=utf-8' }));
 }
 
+
+/* ============================== 데이터 포함 저장 (스냅샷) ============================== */
+const SNAP_ID = 'snap' + 'data';   // 소스 안에서 태그 문자열이 그대로 나오지 않도록 분리
+const SALES_NUM = ['gmv', 'amv', 'qty', 'ret', 'cogs', 'orders', 'cust', 'views'];
+function packState() {
+  const dIx = new Map(), sIx = new Map(), dates = [], skus = [], rows = [];
+  for (const r of S.sales) {
+    let di = dIx.get(r.d); if (di == null) { di = dates.length; dIx.set(r.d, di); dates.push(r.d); }
+    let si = sIx.get(r.sku); if (si == null) { si = skus.length; sIx.set(r.sku, si); skus.push([r.sku, r.bc, r.name, r.cb, r.c1, r.c2, r.c3, r.fresh ? 1 : 0]); }
+    rows.push([di, si, ...SALES_NUM.map((k) => r[k] || 0)]);
+  }
+  return { v: 1, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7), savedAt: new Date().toISOString(), sales: { dates, skus, rows }, masters: S.masters, map: S.map, manual: S.manual };
+}
+function unpackSales(p) {
+  const out = [];
+  for (const row of p.rows) { const sk = p.skus[row[1]]; const r = { d: p.dates[row[0]], sku: sk[0], bc: sk[1], name: sk[2], cb: sk[3], c1: sk[4], c2: sk[5], c3: sk[6], fresh: !!sk[7] }; SALES_NUM.forEach((k, i) => r[k] = row[i + 2]); out.push(r); }
+  return out;
+}
+function u8ToB64(u8) { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); }
+function b64ToU8(b) { const s = atob(b); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
+async function encodeSnap(obj) {
+  const json = JSON.stringify(obj);
+  if (typeof CompressionStream === 'undefined') return 'J:' + u8ToB64(new TextEncoder().encode(json));
+  const buf = await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer();
+  return 'G:' + u8ToB64(new Uint8Array(buf));
+}
+async function decodeSnap(txt) {
+  txt = txt.trim(); const kind = txt.slice(0, 2), u8 = b64ToU8(txt.slice(2));
+  if (kind === 'J:') return JSON.parse(new TextDecoder().decode(u8));
+  const out = await new Response(new Blob([u8]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+  return JSON.parse(out);
+}
+function setSaveInfo(t) { const el = $('#saveInfo'); if (el) el.textContent = t; }
+async function saveSnapshot() {
+  if (!S.sales.length && !hasMaster()) { alert('저장할 데이터가 없습니다. 먼저 파일을 업로드하세요.'); return; }
+  overlay(true, '저장 파일 만드는 중…', '데이터를 압축하고 있습니다', 40); await tick();
+  let html, snap;
+  try {
+    snap = packState(); const enc = await encodeSnap(snap);
+    const re = new RegExp('<script id="' + SNAP_ID + '"[^>]*>[^<]*</' + 'script>\\s*', 'g');
+    html = PRISTINE.replace(re, '');
+    const tag = '<script id="' + SNAP_ID + '" type="application/octet-stream">' + enc + '</' + 'script>\n';
+    const at = html.indexOf('</' + 'head>'); html = html.slice(0, at) + tag + html.slice(at);
+  } finally { overlay(false); }
+  const t = new Date(snap.savedAt); const stamp = t.getFullYear() + pad2(t.getMonth() + 1) + pad2(t.getDate()) + '_' + pad2(t.getHours()) + pad2(t.getMinutes());
+  const name = '로켓매출리포트_' + stamp + '.html'; const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  let saved = false;
+  if (window.showSaveFilePicker) {
+    try { const h = await window.showSaveFilePicker({ suggestedName: name, types: [{ description: 'HTML 파일', accept: { 'text/html': ['.html'] } }] }); const w = await h.createWritable(); await w.write(blob); await w.close(); saved = true; }
+    catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  if (!saved) download(name, blob);
+  await DB.set('snapId', snap.id);   // 이 PC에서 저장 파일을 다시 열어도 묻지 않도록
+  const sz = blob.size / 1048576;
+  setSaveInfo('저장됨 ' + pad2(t.getHours()) + ':' + pad2(t.getMinutes()));
+  alert('저장했습니다 (' + (sz < 1 ? Math.round(blob.size / 1024) + 'KB' : sz.toFixed(1) + 'MB') + ').\n\n이 파일을 다른 컴퓨터로 옮겨 열면 업로드 없이 같은 내용이 보입니다.' + (saved ? '' : '\n(브라우저의 다운로드 폴더에 저장되었습니다)'));
+}
+async function loadSnapshotIfAny() {
+  const el = document.getElementById(SNAP_ID); if (!el || !el.textContent.trim()) return;
+  let snap; try { snap = await decodeSnap(el.textContent); } catch (e) { console.warn('저장 데이터를 읽지 못했습니다', e); return; }
+  const lastId = await DB.get('snapId'); const t = new Date(snap.savedAt); const when = t.toLocaleString('ko-KR');
+  if (lastId === snap.id) { setSaveInfo('저장 파일 ' + when); return; }   // 이미 이 PC에 불러온 파일
+  const hasLocal = S.sales.length || hasMaster();
+  if (hasLocal && !confirm('이 파일에 저장된 데이터(' + when + ' 저장)를 불러올까요?\n\n[확인] 파일의 데이터로 바꿉니다. 이 브라우저에 있던 데이터는 대체됩니다.\n[취소] 이 브라우저에 있던 데이터를 그대로 사용합니다.')) { await DB.set('snapId', snap.id); return; }
+  S.sales = unpackSales(snap.sales); S.masters = snap.masters || {}; S.map = snap.map || clone(DEFAULT_MAP); S.manual = snap.manual || {};
+  S.f.start = ''; S.f.end = ''; S.mapDraft = null;
+  rebuildIndex(); await persist(); await DB.set('snapId', snap.id);
+  setSaveInfo('저장 파일 ' + when); S.loadedMsg = '저장 파일의 데이터를 불러왔습니다 (' + when + ' 저장).';
+}
+
 /* ============================== init ============================== */
 $('#menuBtn').onclick = () => $('#side').classList.toggle('open');
 $('#helpBtn').onclick = () => $('#help').classList.add('on'); $('#helpClose').onclick = () => $('#help').classList.remove('on');
 (async function init() {
   try { await DB.open(); const s = await DB.get('sales'); const m = await DB.get('masters'); const bm = await DB.get('brandmap'); const a = bm ? null : await DB.get('alias'); const mn = await DB.get('manual'); if (mn) S.manual = mn; if (s) S.sales = s; if (m) S.masters = m; if (bm) S.map = bm; else if (a) S.map = fromOldAlias(a); } catch (e) { console.warn('저장소를 사용할 수 없습니다', e); }
-  rebuildIndex(); S.view = S.sales.length ? 'dash' : 'upload'; render();
+  rebuildIndex(); await loadSnapshotIfAny(); S.view = S.sales.length ? 'dash' : 'upload'; render();
+  if (S.loadedMsg) { const box = document.createElement('div'); box.className = 'msg ok'; box.textContent = '✓ ' + S.loadedMsg; $('#page').insertBefore(box, $('#page').children[1] || null); }
 })();
+$('#saveBtn').onclick = saveSnapshot;
 </script>
 </body>
 </html>
