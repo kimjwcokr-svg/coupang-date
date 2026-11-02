@@ -394,7 +394,8 @@ function segGmvHTML(cur, t) {
 }
 function periodKey(d) { return S.f.unit === 'month' ? d.slice(0, 7) : d; }
 function vBrand() {
-  ensureRange(); const f = S.f; const cur = filtered(f.start, f.end);
+  ensureRange(); const f = S.f; const all0 = filtered(f.start, f.end); const cur = all0.filter((r) => !isGift(r.name));
+  const giftN = new Set(all0.filter((r) => isGift(r.name)).map((r) => r.sku)).size;
   const keysSet = new Set(cur.map((r) => periodKey(r.d))); let keys = [...keysSet].sort();
   const gm = new Map(); // group -> {tot, per:Map, children: Map(brand -> {tot, per})}
   for (const r of cur) {
@@ -422,7 +423,7 @@ function vBrand() {
   body += '<tr class="sum"><td class="l fc">전체 합계</td><td>' + fmt(all.gmv) + '</td><td>100%</td>' + keys.map((k) => cell(allPer, k)).join('') + '</tr>';
   return '<div class="ph"><div><div class="eyebrow">BRAND REPORT</div><h1>브랜드별 매출</h1><p>원본 SKU 매칭 기준 · 대분류 아래 하위 그룹별로 분리 (GMV, 원)</p></div><div class="acts"><button class="btn" id="xl">엑셀 다운로드</button><button class="btn" id="csv">CSV</button></div></div>' +
     naBanner() + filterBar({ unit: 1 }) +
-    '<div class="card tc"><div class="th"><div><h3>브랜드 × ' + (f.unit === 'month' ? '월' : '일') + '별 GMV</h3><p class="d">N/A = 원본 데이터에 SKU가 없는 상품</p></div></div><div class="tw"><table class="t"><thead><tr><th class="l fc">브랜드</th><th>합계</th><th>비중</th>' + keys.map((k) => '<th>' + lab(k) + '</th>').join('') + '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
+    '<div class="card tc"><div class="th"><div><h3>브랜드 × ' + (f.unit === 'month' ? '월' : '일') + '별 GMV</h3><p class="d">N/A = 원본 데이터에 SKU가 없는 상품' + (giftN ? ' · 사은품 ' + giftN + '개 SKU 제외' : '') + '</p></div></div><div class="tw"><table class="t"><thead><tr><th class="l fc">브랜드</th><th>합계</th><th>비중</th>' + keys.map((k) => '<th>' + lab(k) + '</th>').join('') + '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
 }
 
 const SKU_COLS = [['sku', 'SKU ID', 'l'], ['name', 'SKU 명', 'l'], ['b', '브랜드', 'l'], ['seg', 'PRE/LUX', 'l'], ['st', '원본 구분', 'l'], ['gmv', 'GMV'], ['amv', 'AMV'], ['qty', '판매수량'], ['orders', '주문건수'], ['views', '조회수'], ['cvr', '전환율'], ['asp', '평균단가']];
@@ -606,7 +607,7 @@ document.addEventListener('drop', (e) => { if (e.target.closest && e.target.clos
 
 /* ============================== export ============================== */
 function exportXlsx() {
-  ensureRange(); const f = S.f; const cur = filtered(f.start, f.end); const wb = XLSX.utils.book_new();
+  ensureRange(); const f = S.f; const cur = filtered(f.start, f.end).filter((r) => !isGift(r.name)); const wb = XLSX.utils.book_new();
   const keys = [...new Set(cur.map((r) => periodKey(r.d)))].sort(); const gm = new Map();
   for (const r of cur) { const k = r.seg + '|' + r.g + '|' + r.b; let a = gm.get(k); if (!a) { a = { seg: r.seg, g: r.g, b: r.b, per: new Map(), t: 0 }; gm.set(k, a); } a.t += r.gmv; a.per.set(periodKey(r.d), (a.per.get(periodKey(r.d)) || 0) + r.gmv); }
   const br = [['구분', '대분류', '하위 그룹', '합계', ...keys]];
