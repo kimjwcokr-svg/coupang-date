@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>쿠팡 로켓배송 매출 리포트</title>
+<style>
+/*REFCSS*/
+  .badge { margin-left: auto; background: var(--err-text); color: #fff; border-radius: 10px; font-size: 10px; padding: 1px 7px; font-weight: 700; }
+  .mi.on .badge { margin-left: 6px; }
+  .mi.on::after { content: none; }
+  .pill { display: inline-block; font-size: 10.5px; padding: 2px 8px; border-radius: 10px; background: #F1F3F5; color: var(--sub); }
+  .pill.na { background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-line); font-weight: 700; }
+  .pill.ok { background: var(--teal-bg); color: var(--teal); }
+  .pill.stop { background: #F1F3F5; color: #8A929E; }
+  table.t td.na, table.t td.l.na { color: var(--err-text); font-weight: 700; }
+  table.t tr.ch td.l { padding-left: 34px; color: var(--sub); }
+  table.t tr.gtot td { background: #F7FAF9; font-weight: 700; }
+  table.t tr.gtot td.fc { background: #F7FAF9; }
+  table.t tr.narow td { background: #FFF4F4; }
+  table.t tr.narow td.fc { background: #FFF4F4; }
+  .banner { display:flex; align-items:center; gap:14px; }
+  .banner .btn { margin-left:auto; }
+  .bars { display:flex; flex-direction:column; gap:9px; margin-top:16px; }
+  .bars .b { display:grid; grid-template-columns: 112px 1fr 92px; align-items:center; gap:10px; font-size:11.5px; color:var(--sub); }
+  .bars .b .n { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bars .b .tr { height:14px; background:#F1F3F5; border-radius:3px; overflow:hidden; }
+  .bars .b .tr i { display:block; height:100%; background:var(--teal2); border-radius:3px; }
+  .bars .b.na .tr i { background: var(--up); }
+  .bars .b .v { text-align:right; color:var(--text); font-weight:600; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  .seg button { border:0; background:#fff; height:34px; padding:0 14px; font-size:12px; }
+  .seg button.on { background:var(--teal); color:#fff; font-weight:700; }
+  .fl { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--line2); font-size:12px; }
+  .fl:last-child { border-bottom:0; }
+  .fl .sp { margin-left:auto; display:flex; gap:8px; align-items:center; color: var(--muted); font-size:11px; }
+  svg text { font-family: inherit; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside id="side">
+    <div class="logo"><div class="mark">R<i>.</i></div><div><b>ROCKET</b><small>SALES REPORT CENTER</small></div></div>
+    <div class="ws"><div class="av">J</div><div><b>조이코리아</b><small>쿠팡 로켓배송 매출</small></div><span class="dot"></span></div>
+    <nav class="menu" id="menu"></nav>
+    <div class="side-foot"><b>◇ 내 브라우저에서 안전하게</b>업로드한 파일은 서버로 전송되지 않습니다.</div>
+  </aside>
+  <div class="main">
+    <div class="topbar">
+      <button class="menu-btn" id="menuBtn">☰</button>
+      <div class="crumb">워크스페이스<span>/</span><b id="crumb">대시보드</b></div>
+      <div class="right"><span class="local">브라우저 로컬 처리</span><button class="link" id="helpBtn">사용 안내 ↗</button><div class="me">JY</div></div>
+    </div>
+    <div class="scroll" id="scroll">
+      <div class="page" id="page"></div>
+      <footer class="f"><span><b>JOYKOREA</b>ROCKET SALES REPORT</span><span id="foot">데이터 없음</span></footer>
+    </div>
+  </div>
+</div>
+<input type="file" id="fileSales" multiple accept=".csv,.tsv,.txt,.xlsx,.xlsm" hidden>
+<input type="file" id="fileMaster" multiple accept=".xlsx,.xlsm" hidden>
+<div class="ov" id="ov"><div class="bx"><b id="ovT">작업 중…</b><small id="ovS"></small><div class="bar"><i id="ovB"></i></div></div></div>
+<div class="ov modal" id="help"><div class="bx">
+  <b style="font-size:15px">사용 안내</b>
+  <ul>
+    <li><b>매출 데이터</b>: 쿠팡 SALES_ANALYSIS_DAILY_PERFORMANCE CSV를 올립니다. 파일명은 상관없고, 파일에 있는 날짜의 기존 데이터는 새 파일로 교체됩니다(여러 날짜 누적).</li>
+    <li><b>원본 데이터(자재마스터)</b>: PRE(일반)·LUX 두 파일을 올립니다. 파일명이 달라도 내용으로 PRE/LUX를 자동 구분하고, 같은 구분의 파일을 다시 올리면 최신 파일로 교체됩니다.</li>
+    <li>매출의 SKU ID를 원본의 SKU ID와 매칭해 브랜드를 붙입니다. 원본에 없는 SKU는 <b>N/A</b>로 표기되며 <b>N/A 점검</b> 메뉴와 대시보드 상단 경고에 계속 표시됩니다. 최신 원본을 올리면 자동으로 해소됩니다.</li>
+    <li><b>브랜드명 변환</b>(데이터 관리)에서 원본 브랜드명을 보고서용 이름(예: VONIN→보닌)과 상위 그룹(TFS.* → 더페이스샵)으로 바꿀 수 있습니다.</li>
+    <li>데이터는 이 PC의 브라우저(IndexedDB)에만 저장됩니다.</li>
+  </ul>
+  <div style="text-align:right"><button class="btn" id="helpClose">닫기</button></div>
+</div></div>
+
+<!--XLSX-->
+<script>
+'use strict';
+/* ============================== utils ============================== */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const N = (v) => (v == null || !isFinite(v)) ? 0 : v;
+const fmt = (v) => Math.round(N(v)).toLocaleString('ko-KR');
+const fmtW = (v) => { v = N(v); const a = Math.abs(v); if (a >= 1e8) return (v / 1e8).toFixed(2) + '억'; if (a >= 1e4) return Math.round(v / 1e4).toLocaleString('ko-KR') + '만'; return fmt(v); };
+const pct = (v, d = 1) => (N(v)).toFixed(d) + '%';
+const pad2 = (n) => (n < 10 ? '0' + n : '' + n);
+const norm = (s) => String(s == null ? '' : s).replace(/\s+/g, '');
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const WD = ['일', '월', '화', '수', '목', '금', '토'];
+const ymd = (d) => d.getUTCFullYear() + '-' + pad2(d.getUTCMonth() + 1) + '-' + pad2(d.getUTCDate());
+const parseYmd = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d)); };
+const addDays = (s, n) => { const d = parseYmd(s); d.setUTCDate(d.getUTCDate() + n); return ymd(d); };
+function toDateStr(v) {
+  if (v == null || v === '') return null;
+  if (typeof v === 'number') {
+    if (v > 19000000 && v < 30000000) { const s = String(Math.round(v)); return s.slice(0, 4) + '-' + s.slice(4, 6) + '-' + s.slice(6, 8); }
+    if (v > 20000 && v < 80000) return ymd(new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000));
+    return null;
+  }
+  const t = String(v).trim(); let m;
+  if ((m = t.match(/^(\d{4})(\d{2})(\d{2})$/))) return m[1] + '-' + m[2] + '-' + m[3];
+  if ((m = t.match(/^(\d{4})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})/))) return m[1] + '-' + pad2(+m[2]) + '-' + pad2(+m[3]);
+  return null;
+}
+function toNum(v) { if (typeof v === 'number') return isFinite(v) ? v : 0; if (v == null || v === '') return 0; const n = parseFloat(String(v).replace(/[,\s%]/g, '')); return isFinite(n) ? n : 0; }
+function toId(v) {
+  let t = v == null ? '' : String(v).trim();
+  if (/^\d+\.0+$/.test(t)) t = t.replace(/\.0+$/, '');
+  if (/^\d+(\.\d+)?[eE]\+?\d+$/.test(t)) t = String(Math.round(Number(t)));
+  return t;
+}
+function download(name, blob) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); }
+function toCSV(rows) { return '﻿' + rows.map((r) => r.map((c) => { c = c == null ? '' : String(c); return /[",\n]/.test(c) ? '"' + c.replace(/"/g, '""') + '"' : c; }).join(',')).join('\r\n'); }
+
+/* ============================== storage ============================== */
+const DB = {
+  db: null,
+  open() { return new Promise((res, rej) => { try { const r = indexedDB.open('rocket-sales', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => { this.db = r.result; res(); }; r.onerror = () => rej(r.error); } catch (e) { rej(e); } }); },
+  get(k) { return new Promise((res) => { if (!this.db) return res(null); const q = this.db.transaction('kv').objectStore('kv').get(k); q.onsuccess = () => res(q.result == null ? null : q.result); q.onerror = () => res(null); }); },
+  set(k, v) { return new Promise((res) => { if (!this.db) return res(); const t = this.db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(); t.onerror = () => res(); }); },
+};
+
+/* ============================== state ============================== */
+// 원본 브랜드명 → [보고서 브랜드명, 상위그룹]  (그룹 빈값이면 브랜드명 자체)
+const DEFAULT_ALIAS = {
+  'Isa Knox': ['이자녹스', ''], 'VONIN': ['보닌', ''], 'LacVert': ['라끄베르', ''],
+  'TFS.CareZone': ['케어존', '케어존'], 'TFS.TPSY': ['TPSY', 'TPSY'], 'TFS.어글리러블리': ['어글리러블리', '어글리러블리'],
+  'TFS.색조': ['TFS.fmgt', '더페이스샵'], 'LG PraL GLASSL': ['LG Pra.L', ''], 'LG PraL SUPERF': ['LG Pra.L', ''],
+};
+const S = {
+  sales: [],            // 일자별 매출 행
+  masters: {},          // {PRE:{file,at,rows:[...]}, LUX:{...}}
+  alias: JSON.parse(JSON.stringify(DEFAULT_ALIAS)),
+  sk: new Map(),        // sku -> master entry
+  view: 'dash',
+  f: { start: '', end: '', group: '', fresh: 'all', unit: 'day', q: '' },
+  sort: { sku: ['gmv', -1] },
+  page: { sku: 0 },
+};
+const MENU = [
+  ['업로드', [['upload', '데이터 관리', 'db']]],
+  ['보고서', [['dash', '대시보드', 'dia'], ['brand', '브랜드별 매출', 'cat'], ['sku', 'SKU 상세', 'list'], ['na', 'N/A 점검', 'sq']]],
+];
+const ICO = {
+  db: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><ellipse cx="8" cy="4" rx="5.5" ry="2"/><path d="M2.5 4v8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V4M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2"/></svg>',
+  dia: '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1.5 14.5 8 8 14.5 1.5 8z"/></svg>',
+  list: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="1"/><path d="M2 7h12M2 10h12"/></svg>',
+  cat: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="1"/><path d="M8 2v12M2 8h12"/></svg>',
+  sq: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4.5" y="4.5" width="7" height="7" rx="1"/></svg>',
+};
+
+/* ============================== 매출 CSV/XLSX 파싱 ============================== */
+function parseCSVText(text) {
+  const rows = []; let row = [], cur = '', q = false, i = 0; const n = text.length;
+  const delim = (text.slice(0, 2000).split('\t').length > text.slice(0, 2000).split(',').length) ? '\t' : ',';
+  if (text.charCodeAt(0) === 0xFEFF) i = 1;
+  for (; i < n; i++) {
+    const c = text[i];
+    if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === delim) { row.push(cur); cur = ''; }
+    else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+    else if (c !== '\r') cur += c;
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  return rows;
+}
+async function readRowsFromFile(file) {
+  const buf = await file.arrayBuffer();
+  if (/\.xls[xm]$/i.test(file.name)) {
+    const wb = XLSX.read(new Uint8Array(buf), { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: '' });
+  }
+  let text = new TextDecoder('utf-8').decode(buf);
+  if (text.indexOf('�') >= 0 && !/날짜/.test(text.slice(0, 400))) { try { text = new TextDecoder('euc-kr').decode(buf); } catch (e) {} }
+  return parseCSVText(text);
+}
+const SALES_COLS = {
+  d: ['날짜'], sku: ['SKUID'], bc: ['바코드'], name: ['SKU명'], brand: ['브랜드'], cat: ['상품카테고리'], sub: ['하위카테고리'], det: ['세부카테고리'], fresh: ['로켓프레시'],
+  gmv: ['매출액(GMV)'], qty: ['판매수량(SKUID)'], ret: ['반품수량'], cogs: ['매입원가(COGS)'], amv: ['AMV'], orders: ['주문건수'], cust: ['주문고객수'], views: ['조회수'],
+};
+function parseSales(rows) {
+  let hi = rows.findIndex((r) => r.some((c) => norm(c) === '날짜') && r.some((c) => norm(c) === 'SKUID'));
+  if (hi < 0) throw new Error('매출 파일 형식이 아닙니다. (날짜, SKU ID 컬럼 필요)');
+  const hd = rows[hi].map(norm); const ix = {};
+  for (const k in SALES_COLS) { ix[k] = -1; for (const nm of SALES_COLS[k]) { const p = hd.indexOf(nm); if (p >= 0) { ix[k] = p; break; } } }
+  if (ix.gmv < 0) throw new Error('매출액(GMV) 컬럼을 찾지 못했습니다.');
+  const g = (r, k) => ix[k] >= 0 ? r[ix[k]] : '';
+  const out = [];
+  for (let i = hi + 1; i < rows.length; i++) {
+    const r = rows[i]; const d = toDateStr(g(r, 'd')); const sku = toId(g(r, 'sku'));
+    if (!d || !sku) continue;
+    out.push({ d, sku, bc: toId(g(r, 'bc')), name: String(g(r, 'name') || '').trim(), cb: String(g(r, 'brand') || '').trim(), c1: String(g(r, 'cat') || '').trim(), c2: String(g(r, 'sub') || '').trim(), c3: String(g(r, 'det') || '').trim(),
+      fresh: String(g(r, 'fresh')).toUpperCase() === 'YES', gmv: toNum(g(r, 'gmv')), amv: toNum(g(r, 'amv')), qty: toNum(g(r, 'qty')), ret: toNum(g(r, 'ret')), cogs: toNum(g(r, 'cogs')), orders: toNum(g(r, 'orders')), cust: toNum(g(r, 'cust')), views: toNum(g(r, 'views')) });
+  }
+  return out;
+}
+
+/* ============================== 원본(자재마스터) 파싱 ============================== */
+const LUX_BRANDS = ['OHUI', '후', '숨37', 'BELIF', 'LGPRAL'];
+async function parseMaster(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  const names = XLSX.read(buf, { type: 'array', bookSheets: true }).SheetNames;
+  const sn = names.find((s) => /^마스터/.test(s)) || names.find((s) => /마스터|master/i.test(s));
+  if (!sn) throw new Error('"마스터" 시트를 찾지 못했습니다. (시트: ' + names.join(', ') + ')');
+  const wb = XLSX.read(buf, { type: 'array', sheets: [sn] });
+  const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: '' });
+  const hi = aoa.slice(0, 15).findIndex((r) => r.some((c) => norm(c) === 'SKUID') && r.some((c) => norm(c) === '브랜드'));
+  if (hi < 0) throw new Error('원본 형식이 아닙니다. (브랜드, SKU ID 컬럼 필요)');
+  const hd = aoa[hi].map(norm); const p = (n) => hd.indexOf(n);
+  const ix = { brand: p('브랜드'), sku: p('SKUID'), code: p('제품코드'), name: p('SAP자재명'), st: p('구분'), po: p('발주가능상태'), sup: p('공급가'), con: p('소비자가'), cat: p('카테고리'), bc: p('바코드'), stock: p('쿠팡재고') };
+  const rows = []; const seen = new Set();
+  for (let i = hi + 1; i < aoa.length; i++) {
+    const r = aoa[i]; const sku = toId(r[ix.sku]); const brand = String(r[ix.brand] || '').trim();
+    if (!/^\d+$/.test(sku) || !brand) continue;
+    if (seen.has(sku)) continue; seen.add(sku);
+    rows.push({ sku, brand, code: toId(r[ix.code]), name: String(r[ix.name] || '').trim(), st: String(r[ix.st] || '').trim(), po: String(r[ix.po] || '').trim(), sup: toNum(r[ix.sup]), con: toNum(r[ix.con]), cat: String(r[ix.cat] || '').trim() });
+  }
+  const bs = new Set(rows.map((r) => norm(r.brand).toUpperCase()));
+  const lux = LUX_BRANDS.filter((b) => bs.has(b)).length;
+  let slot = (/LUX/i.test(file.name) || /LUX/i.test(sn)) ? 'LUX' : (/PRE/i.test(sn) ? 'PRE' : (lux >= 2 ? 'LUX' : 'PRE'));
+  if (lux >= 2) slot = 'LUX'; else if (/PRE/i.test(sn)) slot = 'PRE';
+  return { slot, file: file.name, sheet: sn, at: new Date().toISOString(), rows };
+}
+
+/* ============================== 매칭 / 집계 ============================== */
+function rebuildIndex() {
+  S.sk = new Map();
+  for (const slot of ['PRE', 'LUX']) { const m = S.masters[slot]; if (!m) continue; for (const r of m.rows) if (!S.sk.has(r.sku)) S.sk.set(r.sku, r); }
+  for (const r of S.sales) {
+    const m = S.sk.get(r.sku);
+    if (m) { const a = S.alias[m.brand]; r.b = a ? a[0] : m.brand; r.g = a ? (a[1] || r.b) : (/^TFS\./.test(m.brand) ? '더페이스샵' : r.b); r.st = m.st; r.na = false; r.mc = m.code; }
+    else { r.b = 'N/A'; r.g = 'N/A'; r.st = ''; r.na = true; r.mc = ''; }
+  }
+}
+const hasMaster = () => Object.keys(S.masters).length > 0;
+const dates = () => { const s = new Set(); for (const r of S.sales) s.add(r.d); return [...s].sort(); };
+function filtered(start, end) {
+  const f = S.f; return S.sales.filter((r) => r.d >= start && r.d <= end && (!f.group || r.g === f.group || r.b === f.group) && (f.fresh === 'all' || (f.fresh === 'no' ? !r.fresh : r.fresh)));
+}
+const ZERO = () => ({ gmv: 0, amv: 0, qty: 0, ret: 0, orders: 0, cust: 0, views: 0, cogs: 0, rows: 0 });
+function add(a, r) { a.gmv += r.gmv; a.amv += r.amv; a.qty += r.qty; a.ret += r.ret; a.orders += r.orders; a.cust += r.cust; a.views += r.views; a.cogs += r.cogs; a.rows++; }
+function aggBy(rows, fn) { const m = new Map(); for (const r of rows) { const k = fn(r); let a = m.get(k); if (!a) { a = ZERO(); m.set(k, a); } add(a, r); } return m; }
+function total(rows) { const a = ZERO(); for (const r of rows) add(a, r); a.skus = new Set(rows.map((r) => r.sku)).size; return a; }
+const delta = (cur, prev) => prev ? (cur - prev) / prev * 100 : null;
+function deltaHTML(d) { if (d == null) return '<span style="color:var(--muted)">비교 없음</span>'; return '<b class="' + (d >= 0 ? 'up' : 'down') + '">' + (d >= 0 ? '▲ ' : '▼ ') + Math.abs(d).toFixed(1) + '%</b>'; }
+function naSummary() {
+  const m = new Map();
+  for (const r of S.sales) if (r.na) { let a = m.get(r.sku); if (!a) { a = { sku: r.sku, bc: r.bc, name: r.name, cb: r.cb, gmv: 0, qty: 0, days: new Set(), last: '' }; m.set(r.sku, a); } a.gmv += r.gmv; a.qty += r.qty; a.days.add(r.d); if (r.d > a.last) a.last = r.d; }
+  return [...m.values()].sort((a, b) => b.gmv - a.gmv);
+}
+
+/* ============================== UI helpers ============================== */
+function overlay(show, t, s, p) { $('#ov').classList.toggle('on', show); if (t) $('#ovT').textContent = t; $('#ovS').textContent = s || ''; $('#ovB').style.width = (p || 0) + '%'; }
+function renderMenu() {
+  const na = S.sales.length ? naSummary().length : 0;
+  $('#menu').innerHTML = MENU.map(([g, items]) => '<div class="grp">' + g + '</div>' + items.map(([id, nm, ic]) =>
+    '<button class="mi' + (S.view === id ? ' on' : '') + '" data-v="' + id + '">' + ICO[ic] + nm + (id === 'na' && na ? '<span class="badge">' + na + '</span>' : '') + '</button>').join('')).join('');
+  $('#menu').querySelectorAll('.mi').forEach((b) => b.onclick = () => { go(b.dataset.v); $('#side').classList.remove('open'); });
+}
+function go(v) { S.view = v; $('#scroll').scrollTop = 0; render(); }
+function groupsList() { const s = new Set(); for (const r of S.sales) s.add(r.g); return [...s].sort((a, b) => a === 'N/A' ? 1 : b === 'N/A' ? -1 : a.localeCompare(b, 'ko')); }
+function ensureRange() {
+  const ds = dates(); if (!ds.length) return;
+  if (!S.f.start || !S.f.end || S.f.start < ds[0] || S.f.end > ds[ds.length - 1] || S.f.start > S.f.end) { S.f.start = ds[0]; S.f.end = ds[ds.length - 1]; }
+}
+function filterBar(opts = {}) {
+  const gs = groupsList(); const f = S.f;
+  return '<div class="card filters">' +
+    '<div class="fld"><label>시작일</label><input type="date" id="fS" value="' + f.start + '"></div><div class="range">~</div>' +
+    '<div class="fld"><label>종료일</label><input type="date" id="fE" value="' + f.end + '"></div>' +
+    '<div class="fld"><label>브랜드(그룹)</label><select id="fG"><option value="">전체</option>' + gs.map((g) => '<option' + (f.group === g ? ' selected' : '') + '>' + esc(g) + '</option>').join('') + '</select></div>' +
+    '<div class="fld"><label>로켓프레시</label><select id="fF"><option value="all"' + (f.fresh === 'all' ? ' selected' : '') + '>전체</option><option value="no"' + (f.fresh === 'no' ? ' selected' : '') + '>제외</option><option value="yes"' + (f.fresh === 'yes' ? ' selected' : '') + '>프레시만</option></select></div>' +
+    (opts.unit ? '<div class="fld"><label>집계 단위</label><div class="seg"><button data-u="day" class="' + (f.unit === 'day' ? 'on' : '') + '">일별</button><button data-u="month" class="' + (f.unit === 'month' ? 'on' : '') + '">월별</button></div></div>' : '') +
+    '<button class="btn pri" id="fGo">조회하기</button></div>';
+}
+function bindFilter() {
+  const go2 = () => { S.f.start = $('#fS').value; S.f.end = $('#fE').value; S.f.group = $('#fG').value; S.f.fresh = $('#fF').value; S.page.sku = 0; render(); };
+  const b = $('#fGo'); if (b) b.onclick = go2;
+  document.querySelectorAll('.seg [data-u]').forEach((x) => x.onclick = () => { S.f.unit = x.dataset.u; go2(); });
+}
+function naBanner() {
+  if (!S.sales.length) return '';
+  const na = naSummary(); if (!na.length) return '';
+  const g = na.reduce((a, r) => a + r.gmv, 0); const cbs = [...new Set(na.map((r) => r.cb || '(없음)'))];
+  return '<div class="msg err banner"><div><b>⚠ 원본에서 브랜드를 찾지 못한 SKU(N/A) ' + na.length + '개</b> · 매출 ' + fmt(g) + '원<br><span style="font-size:11px">CSV 기준 브랜드: ' + esc(cbs.slice(0, 8).join(', ')) + (cbs.length > 8 ? ' 외' : '') + ' — 최신 원본 데이터를 업로드하면 해소될 수 있습니다.</span></div><button class="btn sm red" data-go="na">N/A 점검 보기</button></div>';
+}
+function bindGo() { document.querySelectorAll('[data-go]').forEach((b) => b.onclick = () => go(b.dataset.go)); }
+function emptyHero() {
+  return '<div class="ph"><div><div class="eyebrow">ROCKET SALES REPORT</div><h1>쿠팡 로켓배송 매출 리포트</h1><p>매출 CSV와 원본(자재마스터)을 올리면 브랜드별 매출 보고서가 만들어집니다.</p></div></div><div class="hero card" style="padding-bottom:30px"><div class="ic"><svg width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><ellipse cx="8" cy="4" rx="5.5" ry="2"/><path d="M2.5 4v8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2V4M2.5 8c0 1.1 2.5 2 5.5 2s5.5-.9 5.5-2"/></svg></div><h2>데이터를 올려 주세요</h2><p>① 원본 데이터(PRE·LUX 자재마스터 xlsx)<br>② 매출 데이터(SALES_ANALYSIS_DAILY_PERFORMANCE CSV)</p><button class="btn pri" data-go="upload">데이터 관리로 이동</button></div>';
+}
+
+/* ============================== charts ============================== */
+function dailyChart(rows, start, end) {
+  const m = aggBy(rows, (r) => r.d); const days = []; for (let d = start; d <= end; d = addDays(d, 1)) days.push(d);
+  if (days.length > 400) return '<div class="empty-row">기간이 너무 깁니다.</div>';
+  const vals = days.map((d) => m.get(d) || ZERO()); const max = Math.max(1, ...vals.map((v) => v.gmv));
+  const bw = Math.max(14, Math.min(40, Math.floor(900 / days.length))); const H = 220, pt = 14, pb = 34; const W = Math.max(days.length * bw, 600);
+  const step = max > 0 ? Math.pow(10, Math.floor(Math.log10(max))) : 1; let tk = step * Math.ceil(max / step / 4); const ticks = []; for (let t = 0; t <= max * 1.001; t += tk) ticks.push(t);
+  const top = ticks[ticks.length - 1] < max ? ticks[ticks.length - 1] + tk : ticks[ticks.length - 1]; const y = (v) => pt + (H - pt - pb) * (1 - v / top);
+  let svg = '<svg width="' + W + '" height="' + H + '" style="display:block">';
+  ticks.forEach((t) => svg += '<line x1="0" x2="' + W + '" y1="' + y(t) + '" y2="' + y(t) + '" stroke="#EEF0F2"/>');
+  let pts = '';
+  vals.forEach((v, i) => {
+    const x = i * bw + bw * 0.18, w = bw * 0.64, yy = y(v.gmv); const wk = parseYmd(days[i]).getUTCDay();
+    svg += '<rect x="' + x + '" y="' + yy + '" width="' + w + '" height="' + Math.max(0, H - pb - yy) + '" fill="' + (wk === 0 || wk === 6 ? '#8CC5B0' : 'var(--teal2)') + '" rx="2"><title>' + days[i] + ' (' + WD[wk] + ')\nGMV ' + fmt(v.gmv) + '원\nAMV ' + fmt(v.amv) + '원\n판매수량 ' + fmt(v.qty) + '</title></rect>';
+    pts += (i ? 'L' : 'M') + (i * bw + bw / 2) + ' ' + y(v.amv) + ' ';
+    if (days.length <= 45 || i % Math.ceil(days.length / 30) === 0) svg += '<text x="' + (i * bw + bw / 2) + '" y="' + (H - 16) + '" font-size="9.5" fill="#8A929E" text-anchor="middle">' + days[i].slice(5) + '</text><text x="' + (i * bw + bw / 2) + '" y="' + (H - 4) + '" font-size="9" fill="#B4BAC2" text-anchor="middle">' + WD[wk] + '</text>';
+  });
+  svg += '<path d="' + pts + '" fill="none" stroke="#1F2937" stroke-width="1.5"/></svg>';
+  const yax = '<svg width="52" height="' + H + '">' + ticks.map((t) => '<text x="48" y="' + (y(t) + 3) + '" font-size="9.5" fill="#8A929E" text-anchor="end">' + fmtW(t) + '</text>').join('') + '</svg>';
+  return '<div class="chart"><div class="yax">' + yax + '</div><div class="sc">' + svg + '</div></div>';
+}
+function barList(entries, key, naKey) {
+  const max = Math.max(1, ...entries.map((e) => e[1][key]));
+  return '<div class="bars">' + entries.map(([n, a]) => '<div class="b' + (n === 'N/A' ? ' na' : '') + '"><span class="n" title="' + esc(n) + '">' + esc(n) + '</span><span class="tr"><i style="width:' + (a[key] / max * 100) + '%"></i></span><span class="v">' + fmtW(a[key]) + '</span></div>').join('') + '</div>';
+}
+
+/* ============================== views ============================== */
+function vDash() {
+  ensureRange(); const f = S.f;
+  const cur = filtered(f.start, f.end); const len = Math.round((parseYmd(f.end) - parseYmd(f.start)) / 864e5) + 1;
+  const ps = addDays(f.start, -len), pe = addDays(f.start, -1); const prow = filtered(ps, pe); const hasPrev = prow.length > 0;
+  const t = total(cur), p = total(prow);
+  const kp = (ti, v, pv, sub, hl) => '<div class="card kpi' + (hl ? ' hl' : '') + '"><div class="t">' + ti + '</div><div class="v">' + v + '</div><div class="s">' + sub + ' ' + (hasPrev ? deltaHTML(delta(...pv)) : '<span>이전 기간 데이터 없음</span>') + '</div></div>';
+  const days = new Set(cur.map((r) => r.d)).size;
+  const byB = [...aggBy(cur, (r) => r.g).entries()].sort((a, b) => b[1].gmv - a[1].gmv);
+  const top = [...aggBy(cur, (r) => r.sku).entries()].sort((a, b) => b[1].gmv - a[1].gmv).slice(0, 5);
+  const nameOf = (sku) => { const r = cur.find((x) => x.sku === sku); return r ? r.name : sku; };
+  const ins = [];
+  if (byB.length) ins.push(['매출 1위', '<b>' + esc(byB[0][0]) + '</b> ' + fmt(byB[0][1].gmv) + '원 (전체의 ' + pct(byB[0][1].gmv / (t.gmv || 1) * 100) + ')']);
+  const dayAgg = [...aggBy(cur, (r) => r.d).entries()].sort((a, b) => b[1].gmv - a[1].gmv);
+  if (dayAgg.length) ins.push(['최고 일매출', '<b>' + dayAgg[0][0] + '</b> ' + fmt(dayAgg[0][1].gmv) + '원']);
+  if (top[0]) ins.push(['TOP SKU', '<b>' + esc(nameOf(top[0][0])) + '</b> ' + fmt(top[0][1].gmv) + '원 · ' + fmt(top[0][1].qty) + '개']);
+  const naRows = cur.filter((r) => r.na); if (naRows.length) ins.push(['N/A', '<b>' + fmt(naRows.reduce((a, r) => a + r.gmv, 0)) + '원</b>이 브랜드 미확인(N/A) 입니다. 원본을 최신으로 업데이트하세요.']);
+  return '<div class="ph"><div><div class="eyebrow">DASHBOARD</div><h1>로켓배송 매출 대시보드</h1><p>쿠팡 SALES ANALYSIS 기준 · 원본 자재마스터로 브랜드 매칭</p></div><div class="acts"><button class="btn" id="xl">엑셀 다운로드</button></div></div>' +
+    naBanner() + filterBar() +
+    '<div class="meta"><span class="dot">조회 기간 ' + f.start + ' ~ ' + f.end + ' (' + days + '일 데이터)</span><span class="r">비교: <b>' + (hasPrev ? ps + ' ~ ' + pe : '-') + '</b></span></div>' +
+    '<div class="kpis">' + kp('매출액(GMV)', fmtW(t.gmv) + '<small>원</small>', [t.gmv, p.gmv], '전기간 대비', 1) + kp('AMV', fmtW(t.amv) + '<small>원</small>', [t.amv, p.amv], '전기간 대비') + kp('판매수량', fmt(t.qty) + '<small>개</small>', [t.qty, p.qty], '전기간 대비') + kp('주문건수', fmt(t.orders) + '<small>건</small>', [t.orders, p.orders], '전기간 대비') + '</div>' +
+    '<div class="row2"><div class="card ch"><div class="hd"><div><h3>일별 매출 추이</h3><p class="d">막대 = GMV · 선 = AMV (주말은 연한 색)</p></div></div>' + dailyChart(cur, f.start, f.end) + '</div>' +
+    '<div class="card ops"><h3 style="margin:0 0 6px;font-size:15px">운영 지표</h3>' +
+    '<div class="it">활성 SKU<b>' + fmt(t.skus) + '<small>개</small></b></div><div class="it">객단가(GMV/주문)<b>' + fmt(t.orders ? t.gmv / t.orders : 0) + '<small>원</small></b></div><div class="it">반품 수량<b>' + fmt(t.ret) + '<small>개</small></b></div><div class="it">조회수<b>' + fmt(t.views) + '</b></div><div class="it">N/A SKU<b class="' + (naSummary().length ? 'up' : '') + '">' + naSummary().length + '<small>개</small></b></div></div></div>' +
+    '<div class="grid2"><div class="card ch"><h3>브랜드(그룹)별 GMV</h3><p class="d">상위 12개 · 더페이스샵은 TFS.* 합산</p>' + barList(byB.slice(0, 12), 'gmv') + '</div>' +
+    '<div class="card ch"><h3>TOP 5 SKU</h3><p class="d">선택 기간 GMV 기준</p><div class="bars" style="gap:12px">' + top.map(([sku, a], i) => '<div class="b" style="grid-template-columns:20px 1fr 92px"><span>' + (i + 1) + '</span><span class="n" title="' + esc(nameOf(sku)) + '">' + esc(nameOf(sku)) + '</span><span class="v">' + fmtW(a.gmv) + '</span></div>').join('') + '</div></div></div>' +
+    '<div class="card ins" style="margin-top:18px"><h3>인사이트</h3><p class="d">자동 요약</p><ul>' + ins.map(([k, v]) => '<li><i>' + k + '</i><span>' + v + '</span></li>').join('') + '</ul></div>';
+}
+
+function periodKey(d) { return S.f.unit === 'month' ? d.slice(0, 7) : d; }
+function vBrand() {
+  ensureRange(); const f = S.f; const cur = filtered(f.start, f.end);
+  const keysSet = new Set(cur.map((r) => periodKey(r.d))); let keys = [...keysSet].sort();
+  const gm = new Map(); // group -> {tot, per:Map, children: Map(brand -> {tot, per})}
+  for (const r of cur) {
+    let g = gm.get(r.g); if (!g) { g = { tot: ZERO(), per: new Map(), ch: new Map() }; gm.set(r.g, g); }
+    const k = periodKey(r.d); add(g.tot, r); let a = g.per.get(k); if (!a) { a = ZERO(); g.per.set(k, a); } add(a, r);
+    let c = g.ch.get(r.b); if (!c) { c = { tot: ZERO(), per: new Map() }; g.ch.set(r.b, c); } add(c.tot, r); let b = c.per.get(k); if (!b) { b = ZERO(); c.per.set(k, b); } add(b, r);
+  }
+  const groups = [...gm.entries()].sort((a, b) => b[1].tot.gmv - a[1].tot.gmv);
+  const all = total(cur); const allPer = aggBy(cur, (r) => periodKey(r.d));
+  const lab = (k) => S.f.unit === 'month' ? k.slice(2).replace('-', '.') : k.slice(5) + '(' + WD[parseYmd(k).getUTCDay()] + ')';
+  const cell = (m, k) => '<td>' + (m.get(k) ? fmt(m.get(k).gmv) : '<span style="color:#C5CAD1">-</span>') + '</td>';
+  let body = '<tr class="sum"><td class="l fc">전체 매출</td><td>' + fmt(all.gmv) + '</td><td>100%</td>' + keys.map((k) => cell(allPer, k)).join('') + '</tr>';
+  for (const [g, d] of groups) {
+    const multi = d.ch.size > 1 || (d.ch.size === 1 && !d.ch.has(g));
+    const naCls = g === 'N/A' ? ' narow' : '';
+    body += '<tr class="' + (multi ? 'gtot' : '') + naCls + '"><td class="l fc k' + (g === 'N/A' ? ' na' : '') + '">' + esc(g) + (multi ? ' <span class="pill">총계</span>' : '') + '</td><td>' + fmt(d.tot.gmv) + '</td><td>' + pct(d.tot.gmv / (all.gmv || 1) * 100) + '</td>' + keys.map((k) => cell(d.per, k)).join('') + '</tr>';
+    if (multi) for (const [b, c] of [...d.ch.entries()].sort((a, b) => b[1].tot.gmv - a[1].tot.gmv))
+      body += '<tr class="ch"><td class="l fc">' + esc(b) + '</td><td>' + fmt(c.tot.gmv) + '</td><td>' + pct(c.tot.gmv / (all.gmv || 1) * 100) + '</td>' + keys.map((k) => cell(c.per, k)).join('') + '</tr>';
+  }
+  return '<div class="ph"><div><div class="eyebrow">BRAND REPORT</div><h1>브랜드별 매출</h1><p>원본 SKU 매칭 기준 · 더페이스샵은 TFS 세부 라인별로 분리 (GMV, 원)</p></div><div class="acts"><button class="btn" id="xl">엑셀 다운로드</button><button class="btn" id="csv">CSV</button></div></div>' +
+    naBanner() + filterBar({ unit: 1 }) +
+    '<div class="card tc"><div class="th"><div><h3>브랜드 × ' + (f.unit === 'month' ? '월' : '일') + '별 GMV</h3><p class="d">N/A = 원본 데이터에 SKU가 없는 상품</p></div></div><div class="tw"><table class="t"><thead><tr><th class="l fc">브랜드</th><th>합계</th><th>비중</th>' + keys.map((k) => '<th>' + lab(k) + '</th>').join('') + '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
+}
+
+const SKU_COLS = [['sku', 'SKU ID', 'l'], ['name', 'SKU 명', 'l'], ['b', '브랜드', 'l'], ['st', '원본 구분', 'l'], ['gmv', 'GMV'], ['amv', 'AMV'], ['qty', '판매수량'], ['orders', '주문건수'], ['views', '조회수'], ['cvr', '전환율'], ['asp', '평균단가']];
+function skuRows() {
+  ensureRange(); const f = S.f; const cur = filtered(f.start, f.end); const q = norm(S.f.q).toLowerCase();
+  const m = new Map();
+  for (const r of cur) { let a = m.get(r.sku); if (!a) { a = Object.assign(ZERO(), { sku: r.sku, name: r.name, b: r.b, g: r.g, st: r.st, na: r.na, cb: r.cb }); m.set(r.sku, a); } add(a, r); }
+  let rows = [...m.values()].map((a) => (a.cvr = a.views ? a.orders / a.views * 100 : 0, a.asp = a.qty ? a.gmv / a.qty : 0, a));
+  if (q) rows = rows.filter((a) => (a.sku + a.name + a.b).toLowerCase().replace(/\s+/g, '').includes(q));
+  const [k, dir] = S.sort.sku; rows.sort((a, b) => (typeof a[k] === 'string' ? a[k].localeCompare(b[k], 'ko') : a[k] - b[k]) * dir);
+  return rows;
+}
+function vSku() {
+  const rows = skuRows(); const PS = 100; const pages = Math.max(1, Math.ceil(rows.length / PS)); S.page.sku = Math.min(S.page.sku, pages - 1);
+  const [sk, sd] = S.sort.sku; const slice = rows.slice(S.page.sku * PS, S.page.sku * PS + PS);
+  return '<div class="ph"><div><div class="eyebrow">SKU DETAIL</div><h1>SKU 상세</h1><p>SKU별 매출/판매 현황</p></div><div class="acts"><button class="btn" id="csv">CSV</button><button class="btn" id="xl">엑셀 다운로드</button></div></div>' + naBanner() + filterBar() +
+    '<div class="card tc"><div class="th"><div><h3>SKU 목록</h3><p class="d">' + fmt(rows.length) + '개 · 헤더 클릭으로 정렬</p></div><div class="tools"><input type="search" id="q" placeholder="SKU ID · 상품명 · 브랜드 검색" value="' + esc(S.f.q) + '"></div></div><div class="tw"><table class="t"><thead><tr>' +
+    SKU_COLS.map(([k, n, c]) => '<th class="so ' + (c || '') + (k === 'sku' ? ' fc' : '') + '" data-k="' + k + '">' + n + (sk === k ? '<span class="ar">' + (sd < 0 ? '▼' : '▲') + '</span>' : '') + '</th>').join('') + '</tr></thead><tbody>' +
+    (slice.length ? slice.map((a) => '<tr class="' + (a.na ? 'narow' : '') + '"><td class="l fc k">' + a.sku + '</td><td class="l" title="' + esc(a.name) + '">' + esc(a.name) + '</td><td class="l' + (a.na ? ' na' : '') + '">' + esc(a.b) + (a.na && a.cb ? ' <span style="font-weight:400;color:var(--muted)">(' + esc(a.cb) + ')</span>' : '') + '</td><td class="l">' + esc(a.st || '-') + '</td><td class="em">' + fmt(a.gmv) + '</td><td>' + fmt(a.amv) + '</td><td>' + fmt(a.qty) + '</td><td>' + fmt(a.orders) + '</td><td>' + fmt(a.views) + '</td><td>' + pct(a.cvr) + '</td><td>' + fmt(a.asp) + '</td></tr>').join('') : '<tr><td colspan="11" class="empty-row">결과가 없습니다.</td></tr>') +
+    '</tbody></table></div><div class="pg"><span>' + (S.page.sku + 1) + ' / ' + pages + ' 페이지</span><div class="r"><button class="btn sm" id="pp"' + (S.page.sku <= 0 ? ' disabled' : '') + '>이전</button><button class="btn sm" id="pn"' + (S.page.sku >= pages - 1 ? ' disabled' : '') + '>다음</button></div></div></div>';
+}
+
+function vNa() {
+  const na = naSummary(); const g = na.reduce((a, r) => a + r.gmv, 0);
+  const byCb = new Map(); na.forEach((r) => { const k = r.cb || '(없음)'; let a = byCb.get(k); if (!a) { a = { n: 0, gmv: 0 }; byCb.set(k, a); } a.n++; a.gmv += r.gmv; });
+  const mi = ['PRE', 'LUX'].map((s) => S.masters[s] ? s + ': ' + esc(S.masters[s].file) : null).filter(Boolean).join(' / ') || '원본 없음';
+  return '<div class="ph"><div><div class="eyebrow">N/A CHECK</div><h1>N/A 점검</h1><p>업로드된 원본(' + mi + ')에서 SKU ID를 찾지 못한 상품입니다.</p></div><div class="acts"><button class="btn" id="csv"' + (na.length ? '' : ' disabled') + '>CSV</button><button class="btn pri" id="upM">최신 원본 업로드</button></div></div>' +
+    (na.length ? '<div class="msg err"><b>N/A SKU ' + na.length + '개 · 매출 ' + fmt(g) + '원</b><br><span style="font-size:11px">원본(자재마스터)에 아직 등록되지 않은 신규 SKU이거나 구버전 원본일 수 있습니다. 최신 원본 업로드 후에도 남아 있으면 원본 파일에 SKU를 추가해야 합니다. (아래 “CSV 브랜드”는 쿠팡 매출 파일의 브랜드입니다.)</span></div>' : '<div class="msg ok"><b>✓ N/A가 없습니다.</b> 모든 매출 SKU가 원본과 매칭되었습니다.</div>') +
+    (na.length ? '<div class="grid2"><div class="card ch"><h3>CSV 브랜드별 N/A</h3><p class="d">어느 브랜드 원본을 갱신해야 하는지 확인하세요</p>' + barList([...byCb.entries()].sort((a, b) => b[1].gmv - a[1].gmv).map(([k, a]) => [k + ' (' + a.n + ')', a]), 'gmv') + '</div><div class="card ops"><h3 style="margin:0 0 6px;font-size:15px">요약</h3><div class="it">N/A SKU<b>' + na.length + '<small>개</small></b></div><div class="it">N/A 매출<b>' + fmt(g) + '<small>원</small></b></div><div class="it">전체 매출 대비<b>' + pct(g / (S.sales.reduce((a, r) => a + r.gmv, 0) || 1) * 100, 2) + '</b></div></div></div>' +
+      '<div class="card tc" style="margin-top:18px"><div class="th"><div><h3>N/A SKU 목록</h3><p class="d">매출 높은 순</p></div></div><div class="tw"><table class="t"><thead><tr><th class="l">SKU ID</th><th class="l">SKU 명</th><th class="l">CSV 브랜드</th><th class="l">바코드</th><th>GMV</th><th>판매수량</th><th>판매일수</th><th class="l">최근 판매일</th></tr></thead><tbody>' + na.map((r) => '<tr><td class="l k">' + r.sku + '</td><td class="l" title="' + esc(r.name) + '">' + esc(r.name) + '</td><td class="l">' + esc(r.cb || '-') + '</td><td class="l">' + esc(r.bc) + '</td><td class="em">' + fmt(r.gmv) + '</td><td>' + fmt(r.qty) + '</td><td>' + r.days.size + '</td><td class="l">' + r.last + '</td></tr>').join('') + '</tbody></table></div></div>' : '');
+}
+
+function vUpload() {
+  const ds = dates(); const na = S.sales.length ? naSummary().length : 0;
+  const mrow = (s) => { const m = S.masters[s]; return '<div class="fl"><span class="pill ok">' + s + '</span><b>' + (m ? esc(m.file) : '<span style="color:var(--muted);font-weight:400">미업로드</span>') + '</b><span class="sp">' + (m ? fmt(m.rows.length) + ' SKU · ' + m.at.slice(0, 16).replace('T', ' ') + '<button class="btn sm red" data-dm="' + s + '">삭제</button>' : '') + '</span></div>'; };
+  const bs = {}; for (const s of ['PRE', 'LUX']) if (S.masters[s]) for (const r of S.masters[s].rows) bs[r.brand] = 1;
+  const salesBrands = new Set(S.sales.map((r) => r.b)); const nameSet = Object.keys(bs).sort();
+  return '<div class="ph"><div><div class="eyebrow">DATA</div><h1>데이터 관리</h1><p>파일명이 바뀌어도 내용으로 자동 인식합니다. 같은 날짜의 매출은 새 파일로 교체됩니다.</p></div></div>' + naBanner() +
+    '<div class="card conn"><div class="hd"><div><h3 style="margin:0;font-size:15px">데이터 업로드</h3><p class="d" style="margin:4px 0 0;font-size:11.5px;color:var(--muted)">끌어놓거나 클릭해서 선택 (여러 파일 가능)</p></div><span class="steps">STEP 1 · 2</span></div><div class="drops">' +
+    '<div class="drop p" id="dM"><div class="x">원</div><div><b>원본 데이터 (자재마스터)</b><small>PRE · LUX 자재마스터 xlsx — 두 파일 모두 선택 가능</small><small>PRE/LUX는 자동 구분, 같은 구분은 최신 파일로 교체</small><div class="st">' + (S.masters.PRE ? 'PRE ✓ ' : '') + (S.masters.LUX ? 'LUX ✓' : '') + '</div></div><span class="ar">→</span></div>' +
+    '<div class="drop" id="dS"><div class="x">매출</div><div><b>매출 데이터 (CSV)</b><small>SALES_ANALYSIS_DAILY_PERFORMANCE_*.csv</small><small>파일의 날짜 데이터는 덮어쓰고, 다른 날짜는 누적 보관</small><div class="st">' + (ds.length ? ds[0] + ' ~ ' + ds[ds.length - 1] + ' (' + ds.length + '일)' : '') + '</div></div><span class="ar">→</span></div></div>' +
+    '<div class="ft"><span>데이터는 이 브라우저에만 저장되며 서버로 전송되지 않습니다.</span></div></div>' +
+    '<div class="grid2"><div class="card box"><h3>원본 데이터 현황</h3>' + mrow('PRE') + mrow('LUX') + '<p class="note">N/A SKU: <b class="' + (na ? 'up' : '') + '">' + na + '개</b> ' + (na ? '— 최신 원본을 올려 보세요.' : '') + '</p></div>' +
+    '<div class="card box"><h3>매출 데이터 현황</h3><div class="fl"><b>' + fmt(S.sales.length) + '</b> 행 · ' + ds.length + '일 · SKU ' + fmt(new Set(S.sales.map((r) => r.sku)).size) + '개<span class="sp"><button class="btn sm red" id="clrS"' + (S.sales.length ? '' : ' disabled') + '>매출 전체 삭제</button></span></div><div style="margin-top:8px">' + ds.slice(-40).map((d) => '<span class="chip">' + d.slice(5) + '</span>').join('') + '</div></div></div>' +
+    '<div class="card box"><h3>브랜드명 변환</h3><p class="note" style="margin:-6px 0 12px">원본의 브랜드명을 보고서 이름/상위 그룹으로 바꿉니다. (예: VONIN → 보닌, TFS.* → 더페이스샵 하위) 비워 두면 원본 이름 그대로 사용합니다.</p><table class="p"><thead><tr><th>원본 브랜드</th><th>보고서 브랜드명</th><th>상위 그룹</th></tr></thead><tbody>' +
+    (nameSet.length ? nameSet.map((b) => { const a = S.alias[b] || ['', '']; const ph = /^TFS\./.test(b) ? '더페이스샵(자동)' : ''; return '<tr><td>' + esc(b) + '</td><td><input data-a="0" data-b="' + esc(b) + '" value="' + esc(a[0]) + '" placeholder="' + esc(b) + '"></td><td><input data-a="1" data-b="' + esc(b) + '" value="' + esc(a[1]) + '" placeholder="' + ph + '"></td></tr>'; }).join('') : '<tr><td colspan="3" style="color:var(--muted)">원본을 업로드하면 표시됩니다.</td></tr>') + '</tbody></table><div style="margin-top:12px"><button class="btn sm" id="aReset">기본값으로 되돌리기</button></div></div>';
+}
+
+/* ============================== render ============================== */
+function render() {
+  renderMenu();
+  const titles = { upload: '데이터 관리', dash: '대시보드', brand: '브랜드별 매출', sku: 'SKU 상세', na: 'N/A 점검' };
+  $('#crumb').textContent = titles[S.view];
+  const ds = dates(); $('#foot').textContent = ds.length ? '데이터 ' + ds[0] + ' ~ ' + ds[ds.length - 1] + ' · ' + fmt(S.sales.length) + '행' : '데이터 없음';
+  const reports = S.view !== 'upload';
+  const p = $('#page');
+  if (reports && !S.sales.length) p.innerHTML = emptyHero();
+  else p.innerHTML = ({ upload: vUpload, dash: vDash, brand: vBrand, sku: vSku, na: vNa })[S.view]();
+  bind();
+}
+function bind() {
+  bindGo(); if ($('#fGo')) bindFilter();
+  const x = $('#xl'); if (x) x.onclick = exportXlsx;
+  const c = $('#csv'); if (c) c.onclick = exportCsv;
+  const q = $('#q'); if (q) { q.oninput = () => { S.f.q = q.value; S.page.sku = 0; clearTimeout(q._t); q._t = setTimeout(() => { render(); const n = $('#q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); }, 250); }; }
+  document.querySelectorAll('th.so').forEach((th) => th.onclick = () => { const k = th.dataset.k; S.sort.sku = [k, S.sort.sku[0] === k ? -S.sort.sku[1] : -1]; render(); });
+  const pp = $('#pp'), pn = $('#pn'); if (pp) pp.onclick = () => { S.page.sku--; render(); }; if (pn) pn.onclick = () => { S.page.sku++; render(); };
+  const dM = $('#dM'), dS = $('#dS'), upM = $('#upM');
+  const wire = (el, input) => { if (!el) return; el.onclick = () => input.click(); el.ondragover = (e) => { e.preventDefault(); el.classList.add('over'); }; el.ondragleave = () => el.classList.remove('over'); el.ondrop = (e) => { e.preventDefault(); el.classList.remove('over'); handleFiles([...e.dataTransfer.files], el === dM ? 'master' : 'sales'); }; };
+  wire(dM, $('#fileMaster')); wire(dS, $('#fileSales')); if (upM) upM.onclick = () => $('#fileMaster').click();
+  document.querySelectorAll('[data-dm]').forEach((b) => b.onclick = async () => { delete S.masters[b.dataset.dm]; await persist(); rebuildIndex(); render(); });
+  const cs = $('#clrS'); if (cs) cs.onclick = async () => { if (!confirm('저장된 매출 데이터를 모두 삭제할까요?')) return; S.sales = []; await persist(); render(); };
+  document.querySelectorAll('input[data-a]').forEach((i) => i.onchange = async () => {
+    const b = i.dataset.b; const a = S.alias[b] ? S.alias[b].slice() : ['', '']; a[+i.dataset.a] = i.value.trim();
+    if (!a[0] && !a[1]) delete S.alias[b]; else { if (!a[0]) a[0] = b; S.alias[b] = a; }
+    await persist(); rebuildIndex(); render();
+  });
+  const ar = $('#aReset'); if (ar) ar.onclick = async () => { S.alias = JSON.parse(JSON.stringify(DEFAULT_ALIAS)); await persist(); rebuildIndex(); render(); };
+}
+
+/* ============================== 업로드 처리 ============================== */
+async function persist() { await DB.set('sales', S.sales.map((r) => { const { b, g, st, na, mc, ...o } = r; return o; })); await DB.set('masters', S.masters); await DB.set('alias', S.alias); }
+async function handleFiles(files, hint) {
+  if (!files.length) return; const log = []; let hasNew = false;
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i]; overlay(true, '파일 처리 중…', f.name, (i / files.length) * 100); await tick();
+      try {
+        const isX = /\.xls[xm]$/i.test(f.name);
+        if (hint === 'master' || (isX && hint !== 'sales')) {
+          const m = await parseMaster(f); S.masters[m.slot] = { file: m.file, sheet: m.sheet, at: m.at, rows: m.rows }; log.push(['ok', '원본(' + m.slot + ') ' + f.name + ' — ' + fmt(m.rows.length) + ' SKU']);
+        } else {
+          let rows = await readRowsFromFile(f);
+          const sales = parseSales(rows);
+          if (!sales.length) throw new Error('읽을 수 있는 매출 행이 없습니다.');
+          const ds = new Set(sales.map((r) => r.d)); S.sales = S.sales.filter((r) => !ds.has(r.d)).concat(sales);
+          const arr = [...ds].sort(); log.push(['ok', '매출 ' + f.name + ' — ' + fmt(sales.length) + '행, ' + arr[0] + (arr.length > 1 ? ' ~ ' + arr[arr.length - 1] : '')]);
+        }
+        hasNew = true;
+      } catch (e) {
+        // 매출/원본 힌트가 틀렸을 때 다른 쪽으로 한 번 더 시도
+        log.push(['e', f.name + ' — ' + e.message]);
+      }
+    }
+    S.sales.sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : 0);
+    overlay(true, '매칭/저장 중…', '', 90); await tick();
+    rebuildIndex(); await persist();
+  } finally { overlay(false); }
+  S.f.start = ''; S.f.end = ''; render();
+  const na = S.sales.length ? naSummary() : [];
+  const box = document.createElement('div'); box.className = 'loglist'; box.style.marginBottom = '16px';
+  box.innerHTML = log.map(([c, t]) => '<div class="' + (c === 'e' ? 'e' : '') + '">' + (c === 'e' ? '✕ ' : '✓ ') + esc(t) + '</div>').join('') + (na.length ? '<div class="e">⚠ N/A SKU ' + na.length + '개 (매출 ' + fmt(na.reduce((a, r) => a + r.gmv, 0)) + '원) — N/A 점검 메뉴에서 확인하세요.</div>' : '');
+  $('#page').insertBefore(box, $('#page').children[1] || null);
+}
+$('#fileSales').onchange = (e) => { handleFiles([...e.target.files], 'sales'); e.target.value = ''; };
+$('#fileMaster').onchange = (e) => { handleFiles([...e.target.files], 'master'); e.target.value = ''; };
+document.addEventListener('dragover', (e) => e.preventDefault());
+document.addEventListener('drop', (e) => { if (e.target.closest && e.target.closest('.drop')) return; e.preventDefault(); const fs = [...e.dataTransfer.files]; if (fs.length) handleFiles(fs, ''); });
+
+/* ============================== export ============================== */
+function exportXlsx() {
+  ensureRange(); const f = S.f; const cur = filtered(f.start, f.end); const wb = XLSX.utils.book_new();
+  const keys = [...new Set(cur.map((r) => periodKey(r.d)))].sort(); const gm = new Map();
+  for (const r of cur) { const k = r.g === r.b ? r.g : r.g + '|' + r.b; let a = gm.get(k); if (!a) { a = { g: r.g, b: r.b, per: new Map(), t: 0 }; gm.set(k, a); } a.t += r.gmv; a.per.set(periodKey(r.d), (a.per.get(periodKey(r.d)) || 0) + r.gmv); }
+  const br = [['그룹', '브랜드', '합계', ...keys]]; [...gm.values()].sort((a, b) => b.t - a.t).forEach((a) => br.push([a.g, a.b, a.t, ...keys.map((k) => a.per.get(k) || 0)]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(br), '브랜드별매출');
+  const sk = skuRows(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['SKU ID', 'SKU 명', '브랜드', '그룹', '원본구분', 'GMV', 'AMV', '판매수량', '주문건수', '조회수'], ...sk.map((a) => [a.sku, a.name, a.b, a.g, a.st, a.gmv, a.amv, a.qty, a.orders, a.views])]), 'SKU상세');
+  const na = naSummary(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['SKU ID', 'SKU 명', 'CSV 브랜드', '바코드', 'GMV', '판매수량', '판매일수', '최근판매일'], ...na.map((r) => [r.sku, r.name, r.cb, r.bc, r.gmv, r.qty, r.days.size, r.last])]), 'N/A점검');
+  XLSX.writeFile(wb, '로켓매출리포트_' + f.start + '_' + f.end + '.xlsx');
+}
+function exportCsv() {
+  let rows;
+  if (S.view === 'na') rows = [['SKU ID', 'SKU 명', 'CSV 브랜드', '바코드', 'GMV', '판매수량', '판매일수', '최근판매일'], ...naSummary().map((r) => [r.sku, r.name, r.cb, r.bc, r.gmv, r.qty, r.days.size, r.last])];
+  else if (S.view === 'sku') rows = [['SKU ID', 'SKU 명', '브랜드', '원본구분', 'GMV', 'AMV', '판매수량', '주문건수', '조회수'], ...skuRows().map((a) => [a.sku, a.name, a.b, a.st, a.gmv, a.amv, a.qty, a.orders, a.views])];
+  else { const t = $('table.t'); rows = [...t.querySelectorAll('tr')].map((tr) => [...tr.children].map((c) => c.textContent.replace(/,/g, '').trim())); }
+  download('report_' + S.view + '.csv', new Blob([toCSV(rows)], { type: 'text/csv;charset=utf-8' }));
+}
+
+/* ============================== init ============================== */
+$('#menuBtn').onclick = () => $('#side').classList.toggle('open');
+$('#helpBtn').onclick = () => $('#help').classList.add('on'); $('#helpClose').onclick = () => $('#help').classList.remove('on');
+(async function init() {
+  try { await DB.open(); const s = await DB.get('sales'); const m = await DB.get('masters'); const a = await DB.get('alias'); if (s) S.sales = s; if (m) S.masters = m; if (a) S.alias = a; } catch (e) { console.warn('저장소를 사용할 수 없습니다', e); }
+  rebuildIndex(); S.view = S.sales.length ? 'dash' : 'upload'; render();
+})();
+</script>
+</body>
+</html>
