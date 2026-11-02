@@ -226,6 +226,7 @@
   table.t td.na, table.t td.l.na { color: var(--err-text); font-weight: 700; }
   table.t tr.ch td.l { padding-left: 34px; color: var(--sub); }
   table.t tr.gtot td { background: #F7FAF9; font-weight: 700; }
+  table.t tr.sum td { border-top: 1px solid var(--teal-line); }
   table.t tr.gtot td.fc { background: #F7FAF9; }
   table.t tr.narow td { background: #FFF4F4; }
   table.t tr.narow td.fc { background: #FFF4F4; }
@@ -490,7 +491,7 @@ function rebuildIndex() {
 }
 const isGift = (name) => /사은품/.test(name || '');
 function guessSeg(brand, cb) { const bi = S.brandInfo && S.brandInfo.get(brand); if (bi) return bi.seg; const c = S.csvSeg && S.csvSeg.get(cb); return c || 'PRE'; }
-const SEGN = { PRE: 'PRE 프리미엄', LUX: 'LUX 럭셔리', '': '미분류(N/A·사은품)' };
+const SEGN = { PRE: 'PRE 프리미엄', LUX: 'LUX 럭셔리', '': '미분류(N/A)' };
 const hasMaster = () => Object.keys(S.masters).length > 0;
 const dates = () => { const s = new Set(); for (const r of S.sales) s.add(r.d); return [...s].sort(); };
 function filtered(start, end) {
@@ -621,7 +622,7 @@ function segGmvHTML(cur, t) {
   };
   const other = cur.filter((r) => !r.seg).reduce((a, r) => a + r.gmv, 0);
   return '<div class="grid2" style="margin-bottom:' + (other ? '8px' : '18px') + ';align-items:start">' + col('PRE', 'PRE 프리미엄') + col('LUX', 'LUX 럭셔리') + '</div>' +
-    (other ? '<p class="note" style="margin:0 2px 18px">미분류(N/A·사은품) ' + fmt(other) + '원은 위 두 구분에 포함되지 않습니다.</p>' : '');
+    (other ? '<p class="note" style="margin:0 2px 18px">미분류(N/A) ' + fmt(other) + '원은 위 두 구분에 포함되지 않습니다.</p>' : '');
 }
 function periodKey(d) { return S.f.unit === 'month' ? d.slice(0, 7) : d; }
 function vBrand() {
@@ -629,25 +630,27 @@ function vBrand() {
   const keysSet = new Set(cur.map((r) => periodKey(r.d))); let keys = [...keysSet].sort();
   const gm = new Map(); // group -> {tot, per:Map, children: Map(brand -> {tot, per})}
   for (const r of cur) {
-    let g = gm.get(r.g); if (!g) { g = { tot: ZERO(), per: new Map(), ch: new Map() }; gm.set(r.g, g); }
+    const gk = r.seg + '|' + r.g; let g = gm.get(gk); if (!g) { g = { name: r.g, seg: r.seg, tot: ZERO(), per: new Map(), ch: new Map() }; gm.set(gk, g); }
     const k = periodKey(r.d); add(g.tot, r); let a = g.per.get(k); if (!a) { a = ZERO(); g.per.set(k, a); } add(a, r);
     let c = g.ch.get(r.b); if (!c) { c = { tot: ZERO(), per: new Map() }; g.ch.set(r.b, c); } add(c.tot, r); let b = c.per.get(k); if (!b) { b = ZERO(); c.per.set(k, b); } add(b, r);
   }
-  const groups = [...gm.entries()].sort((a, b) => b[1].tot.gmv - a[1].tot.gmv);
+  const groups = [...gm.values()].sort((a, b) => b.tot.gmv - a.tot.gmv);
   const all = total(cur); const allPer = aggBy(cur, (r) => periodKey(r.d));
   const lab = (k) => S.f.unit === 'month' ? k.slice(2).replace('-', '.') : k.slice(5) + '(' + WD[parseYmd(k).getUTCDay()] + ')';
   const cell = (m, k) => '<td>' + (m.get(k) ? fmt(m.get(k).gmv) : '<span style="color:#C5CAD1">-</span>') + '</td>';
-  let body = '<tr class="sum"><td class="l fc">전체 매출</td><td>' + fmt(all.gmv) + '</td><td>100%</td>' + keys.map((k) => cell(allPer, k)).join('') + '</tr>';
-  for (const [g, d] of groups) {
-    const multi = d.ch.size > 1 || (d.ch.size === 1 && !d.ch.has(g));
-    const naCls = g === 'N/A' ? ' narow' : '';
-    body += '<tr class="' + (multi ? 'gtot' : '') + naCls + '"><td class="l fc k' + (g === 'N/A' ? ' na' : '') + '">' + esc(g) + (multi ? ' <span class="pill">총계</span>' : '') + '</td><td>' + fmt(d.tot.gmv) + '</td><td>' + pct(d.tot.gmv / (all.gmv || 1) * 100) + '</td>' + keys.map((k) => cell(d.per, k)).join('') + '</tr>';
-    if (multi) for (const [b, c] of [...d.ch.entries()].sort((a, b) => b[1].tot.gmv - a[1].tot.gmv))
-      body += '<tr class="ch"><td class="l fc">' + esc(b) + '</td><td>' + fmt(c.tot.gmv) + '</td><td>' + pct(c.tot.gmv / (all.gmv || 1) * 100) + '</td>' + keys.map((k) => cell(c.per, k)).join('') + '</tr>';
-  }
   const sg = new Map(); for (const r of cur) { let a = sg.get(r.seg); if (!a) { a = { tot: ZERO(), per: new Map() }; sg.set(r.seg, a); } add(a.tot, r); const k = periodKey(r.d); let b = a.per.get(k); if (!b) { b = ZERO(); a.per.set(k, b); } add(b, r); }
-  for (const [sk, nm] of [['PRE', 'PRE 프리미엄 합계'], ['LUX', 'LUX 럭셔리 합계'], ['', '미분류(N/A·사은품) 합계']]) { const a = sg.get(sk); if (!a) continue;
-    body += '<tr class="sum"><td class="l fc' + (sk === '' ? ' na' : '') + '">' + nm + '</td><td>' + fmt(a.tot.gmv) + '</td><td>' + pct(a.tot.gmv / (all.gmv || 1) * 100) + '</td>' + keys.map((k) => cell(a.per, k)).join('') + '</tr>'; }
+  let body = '';
+  for (const [sk, nm] of [['PRE', 'PRE 프리미엄 합계'], ['LUX', 'LUX 럭셔리 합계'], ['', '미분류(N/A) 합계']]) {
+    const a = sg.get(sk); if (!a) continue;
+    body += '<tr class="sum"><td class="l fc' + (sk === '' ? ' na' : '') + '">' + nm + '</td><td>' + fmt(a.tot.gmv) + '</td><td>' + pct(a.tot.gmv / (all.gmv || 1) * 100) + '</td>' + keys.map((k) => cell(a.per, k)).join('') + '</tr>';
+    for (const d of groups.filter((x) => x.seg === sk)) {
+      const g = d.name; const multi = d.ch.size > 1 || (d.ch.size === 1 && !d.ch.has(g));
+      const naCls = g === 'N/A' ? ' narow' : '';
+      body += '<tr class="' + (multi ? 'gtot' : '') + naCls + '"><td class="l fc k' + (g === 'N/A' ? ' na' : '') + '">' + esc(g) + (multi ? ' <span class="pill">총계</span>' : '') + '</td><td>' + fmt(d.tot.gmv) + '</td><td>' + pct(d.tot.gmv / (all.gmv || 1) * 100) + '</td>' + keys.map((k) => cell(d.per, k)).join('') + '</tr>';
+      if (multi) for (const [b, c] of [...d.ch.entries()].sort((a, b) => b[1].tot.gmv - a[1].tot.gmv))
+        body += '<tr class="ch"><td class="l fc">' + esc(b) + '</td><td>' + fmt(c.tot.gmv) + '</td><td>' + pct(c.tot.gmv / (all.gmv || 1) * 100) + '</td>' + keys.map((k) => cell(c.per, k)).join('') + '</tr>';
+    }
+  }
   body += '<tr class="sum"><td class="l fc">전체 합계</td><td>' + fmt(all.gmv) + '</td><td>100%</td>' + keys.map((k) => cell(allPer, k)).join('') + '</tr>';
   return '<div class="ph"><div><div class="eyebrow">BRAND REPORT</div><h1>브랜드별 매출</h1><p>원본 SKU 매칭 기준 · 대분류 아래 하위 그룹별로 분리 (GMV, 원)</p></div><div class="acts"><button class="btn" id="xl">엑셀 다운로드</button><button class="btn" id="csv">CSV</button></div></div>' +
     naBanner() + filterBar({ unit: 1 }) +
@@ -837,11 +840,18 @@ document.addEventListener('drop', (e) => { if (e.target.closest && e.target.clos
 function exportXlsx() {
   ensureRange(); const f = S.f; const cur = filtered(f.start, f.end); const wb = XLSX.utils.book_new();
   const keys = [...new Set(cur.map((r) => periodKey(r.d)))].sort(); const gm = new Map();
-  for (const r of cur) { const k = r.g === r.b ? r.g : r.g + '|' + r.b; let a = gm.get(k); if (!a) { a = { g: r.g, b: r.b, per: new Map(), t: 0 }; gm.set(k, a); } a.t += r.gmv; a.per.set(periodKey(r.d), (a.per.get(periodKey(r.d)) || 0) + r.gmv); }
-  const br = [['그룹', '브랜드', '합계', ...keys]]; [...gm.values()].sort((a, b) => b.t - a.t).forEach((a) => br.push([a.g, a.b, a.t, ...keys.map((k) => a.per.get(k) || 0)]));
+  for (const r of cur) { const k = r.seg + '|' + r.g + '|' + r.b; let a = gm.get(k); if (!a) { a = { seg: r.seg, g: r.g, b: r.b, per: new Map(), t: 0 }; gm.set(k, a); } a.t += r.gmv; a.per.set(periodKey(r.d), (a.per.get(periodKey(r.d)) || 0) + r.gmv); }
+  const br = [['구분', '대분류', '하위 그룹', '합계', ...keys]];
+  for (const [sk, nm] of [['PRE', 'PRE 프리미엄 합계'], ['LUX', 'LUX 럭셔리 합계'], ['', '미분류(N/A) 합계']]) {
+    const items = [...gm.values()].filter((a) => a.seg === sk); if (!items.length) continue;
+    const per = (k) => items.reduce((x, a) => x + (a.per.get(k) || 0), 0); const gt = new Map(); items.forEach((a) => gt.set(a.g, (gt.get(a.g) || 0) + a.t));
+    br.push([nm, '', '', items.reduce((x, a) => x + a.t, 0), ...keys.map(per)]);
+    items.sort((a, b) => (gt.get(b.g) - gt.get(a.g)) || a.g.localeCompare(b.g, 'ko') || b.t - a.t).forEach((a) => br.push([sk || '미분류', a.g, a.b === a.g ? '' : a.b, a.t, ...keys.map((k) => a.per.get(k) || 0)]));
+  }
+  br.push(['전체 합계', '', '', cur.reduce((x, r) => x + r.gmv, 0), ...keys.map((k) => [...gm.values()].reduce((x, a) => x + (a.per.get(k) || 0), 0))]);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(br), '브랜드별매출');
   const sk = skuRows(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['SKU ID', 'SKU 명', '브랜드', '그룹', 'PRE/LUX', '원본구분', 'GMV', 'AMV', '판매수량', '주문건수', '조회수'], ...sk.map((a) => [a.sku, a.name, a.b, a.g, a.seg, a.st, a.gmv, a.amv, a.qty, a.orders, a.views])]), 'SKU상세');
-  const na = naSummary(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['SKU ID', 'SKU 명', 'CSV 브랜드', '바코드', 'GMV', '판매수량', '판매일수', '최근판매일'], ...na.map((r) => [r.sku, r.name, r.cb, r.bc, r.gmv, r.qty, r.days.size, r.last])]), 'N/A점검');
+  const na = naSummary(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['SKU ID', 'SKU 명', 'CSV 브랜드', '바코드', 'GMV', '판매수량', '판매일수', '최근판매일'], ...na.map((r) => [r.sku, r.name, r.cb, r.bc, r.gmv, r.qty, r.days.size, r.last])]), 'NA점검');
   XLSX.writeFile(wb, '로켓매출리포트_' + f.start + '_' + f.end + '.xlsx');
 }
 function exportCsv() {
