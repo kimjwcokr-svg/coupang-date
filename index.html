@@ -465,19 +465,21 @@ function rebuildIndex() {
   const info = new Map(), csvSeg = new Map();   // 브랜드 -> {g, seg}, CSV브랜드 -> seg
   for (const r of S.sales) {
     const e = S.sk.get(r.sku);
-    if (e) { const m = e.r; const a = S.alias[m.brand]; r.b = a ? a[0] : m.brand; r.g = a ? (a[1] || r.b) : (/^TFS\./.test(m.brand) ? '더페이스샵' : r.b); r.st = m.st; r.na = false; r.man = false; r.seg = e.slot;
+    if (e) { const m = e.r; const a = S.alias[m.brand]; r.b = a ? a[0] : m.brand; r.g = a ? (a[1] || r.b) : (/^TFS\./.test(m.brand) ? '더페이스샵' : r.b); r.st = m.st; r.na = false; r.man = false; r.gift = false; r.seg = e.slot;
       if (!info.has(r.b)) info.set(r.b, { g: r.g, seg: e.slot }); if (r.cb && !csvSeg.has(r.cb)) csvSeg.set(r.cb, e.slot); }
   }
   S.brandInfo = info; S.csvSeg = csvSeg;
   for (const r of S.sales) {
     if (S.sk.has(r.sku)) continue;
     const mn = S.manual[r.sku];
-    if (mn) { const bi = info.get(mn.b); r.b = mn.b; r.g = bi ? bi.g : (/^TFS\./.test(mn.b) ? '더페이스샵' : mn.b); r.seg = mn.seg; r.st = ''; r.na = false; r.man = true; }
-    else { r.b = 'N/A'; r.g = 'N/A'; r.st = ''; r.na = true; r.man = false; r.seg = ''; }
+    if (mn) { const bi = info.get(mn.b); r.b = mn.b; r.g = bi ? bi.g : (/^TFS\./.test(mn.b) ? '더페이스샵' : mn.b); r.seg = mn.seg; r.st = ''; r.na = false; r.man = true; r.gift = false; }
+    else if (isGift(r.name)) { r.b = '사은품'; r.g = '사은품'; r.st = ''; r.na = false; r.man = false; r.seg = ''; r.gift = true; }
+    else { r.b = 'N/A'; r.g = 'N/A'; r.st = ''; r.na = true; r.man = false; r.seg = ''; r.gift = false; }
   }
 }
+const isGift = (name) => /사은품/.test(name || '');
 function guessSeg(brand, cb) { const bi = S.brandInfo && S.brandInfo.get(brand); if (bi) return bi.seg; const c = S.csvSeg && S.csvSeg.get(cb); return c || 'PRE'; }
-const SEGN = { PRE: 'PRE 프리미엄', LUX: 'LUX 럭셔리', '': '미분류(N/A)' };
+const SEGN = { PRE: 'PRE 프리미엄', LUX: 'LUX 럭셔리', '': '미분류(N/A·사은품)' };
 const hasMaster = () => Object.keys(S.masters).length > 0;
 const dates = () => { const s = new Set(); for (const r of S.sales) s.add(r.d); return [...s].sort(); };
 function filtered(start, end) {
@@ -602,13 +604,14 @@ function top30HTML(cur, t) {
   return '<div class="grid2" style="margin-bottom:18px;align-items:start">' + col('PRE', 'PRE 프리미엄') + col('LUX', 'LUX 럭셔리') + '</div>';
 }
 function segGmvHTML(cur, t) {
-  const m = aggBy(cur, (r) => r.seg); const tot = t.gmv || 1; const items = [['PRE', 'PRE 프리미엄', '#1F7A63'], ['LUX', 'LUX 럭셔리', '#1F2937'], ['', '미분류(N/A)', '#E03131']].filter(([k]) => m.get(k));
-  const bar = items.map(([k, n, c]) => '<i style="display:block;width:' + (m.get(k).gmv / tot * 100) + '%;background:' + c + '"></i>').join('');
-  return '<div class="card ch" style="margin-bottom:18px"><h3>프리미엄 / 럭셔리 GMV</h3><p class="d">선택 기간 · 원본 파일(PRE·LUX) 기준 구분</p><div style="display:flex;height:16px;border-radius:4px;overflow:hidden;margin:14px 0 4px;background:#F1F3F5">' + bar + '</div>' +
-    '<div class="kpis" style="margin:14px 0 0;grid-template-columns:repeat(' + (items.length + 1) + ',minmax(0,1fr))">' + items.map(([k, n, c]) => { const a = m.get(k); return '<div class="card kpi" style="border-top:3px solid ' + c + '"><div class="t">' + n + '</div><div class="v" style="font-size:24px">' + fmt(a.gmv) + '<small>원</small></div><div class="s">비중 <b>' + pct(a.gmv / tot * 100) + '</b> · 판매 ' + fmt(a.qty) + '개 · SKU ' + new Set(cur.filter((r) => r.seg === k).map((r) => r.sku)).size + '개</div></div>'; }).join('') +
-    '<div class="card kpi hl"><div class="t">합계</div><div class="v" style="font-size:24px">' + fmt(t.gmv) + '<small>원</small></div><div class="s">판매 ' + fmt(t.qty) + '개 · SKU ' + fmt(t.skus) + '개</div></div></div></div>';
+  const col = (seg, label) => {
+    const rows = cur.filter((r) => r.seg === seg); const ent = [...aggBy(rows, (r) => r.g).entries()].sort((a, b) => b[1].gmv - a[1].gmv); const sum = rows.reduce((a, r) => a + r.gmv, 0);
+    return '<div class="card ch"><h3>' + label + ' 브랜드별 GMV</h3><p class="d">합계 <b style="color:var(--text)">' + fmt(sum) + '원</b> · 전체의 ' + pct(sum / (t.gmv || 1) * 100) + ' · ' + ent.length + '개 브랜드</p>' + (ent.length ? barList(ent, 'gmv') : '<div class="empty-row">데이터 없음</div>') + '</div>';
+  };
+  const other = cur.filter((r) => !r.seg).reduce((a, r) => a + r.gmv, 0);
+  return '<div class="grid2" style="margin-bottom:' + (other ? '8px' : '18px') + ';align-items:start">' + col('PRE', 'PRE 프리미엄') + col('LUX', 'LUX 럭셔리') + '</div>' +
+    (other ? '<p class="note" style="margin:0 2px 18px">미분류(N/A·사은품) ' + fmt(other) + '원은 위 두 구분에 포함되지 않습니다.</p>' : '');
 }
-
 function periodKey(d) { return S.f.unit === 'month' ? d.slice(0, 7) : d; }
 function vBrand() {
   ensureRange(); const f = S.f; const cur = filtered(f.start, f.end);
@@ -632,7 +635,7 @@ function vBrand() {
       body += '<tr class="ch"><td class="l fc">' + esc(b) + '</td><td>' + fmt(c.tot.gmv) + '</td><td>' + pct(c.tot.gmv / (all.gmv || 1) * 100) + '</td>' + keys.map((k) => cell(c.per, k)).join('') + '</tr>';
   }
   const sg = new Map(); for (const r of cur) { let a = sg.get(r.seg); if (!a) { a = { tot: ZERO(), per: new Map() }; sg.set(r.seg, a); } add(a.tot, r); const k = periodKey(r.d); let b = a.per.get(k); if (!b) { b = ZERO(); a.per.set(k, b); } add(b, r); }
-  for (const [sk, nm] of [['PRE', 'PRE 프리미엄 합계'], ['LUX', 'LUX 럭셔리 합계'], ['', '미분류(N/A) 합계']]) { const a = sg.get(sk); if (!a) continue;
+  for (const [sk, nm] of [['PRE', 'PRE 프리미엄 합계'], ['LUX', 'LUX 럭셔리 합계'], ['', '미분류(N/A·사은품) 합계']]) { const a = sg.get(sk); if (!a) continue;
     body += '<tr class="sum"><td class="l fc' + (sk === '' ? ' na' : '') + '">' + nm + '</td><td>' + fmt(a.tot.gmv) + '</td><td>' + pct(a.tot.gmv / (all.gmv || 1) * 100) + '</td>' + keys.map((k) => cell(a.per, k)).join('') + '</tr>'; }
   body += '<tr class="sum"><td class="l fc">전체 합계</td><td>' + fmt(all.gmv) + '</td><td>100%</td>' + keys.map((k) => cell(allPer, k)).join('') + '</tr>';
   return '<div class="ph"><div><div class="eyebrow">BRAND REPORT</div><h1>브랜드별 매출</h1><p>원본 SKU 매칭 기준 · 더페이스샵은 TFS 세부 라인별로 분리 (GMV, 원)</p></div><div class="acts"><button class="btn" id="xl">엑셀 다운로드</button><button class="btn" id="csv">CSV</button></div></div>' +
@@ -670,7 +673,8 @@ function vNa() {
   // 수동 지정 목록
   const mrows = new Map(); for (const r of S.sales) if (r.man) { let a = mrows.get(r.sku); if (!a) { a = { sku: r.sku, name: r.name, cb: r.cb, b: r.b, seg: r.seg, gmv: 0, qty: 0 }; mrows.set(r.sku, a); } a.gmv += r.gmv; a.qty += r.qty; }
   const man = [...mrows.values()].sort((a, b) => b.gmv - a.gmv);
-  return '<div class="ph"><div><div class="eyebrow">N/A CHECK</div><h1>N/A 점검</h1><p>업로드된 원본(' + mi + ')에서 SKU ID를 찾지 못한 상품입니다. 브랜드를 직접 지정해 해소할 수 있습니다.</p></div><div class="acts"><button class="btn" id="csv"' + (na.length ? '' : ' disabled') + '>CSV</button><button class="btn pri" id="upM">최신 원본 업로드</button></div></div>' +
+  const gifts = new Set(S.sales.filter((r) => r.gift).map((r) => r.sku)).size;
+  return '<div class="ph"><div><div class="eyebrow">N/A CHECK</div><h1>N/A 점검</h1><p>업로드된 원본(' + mi + ')에서 SKU ID를 찾지 못한 상품입니다. 브랜드를 직접 지정해 해소할 수 있습니다.' + (gifts ? ' <b>사은품 ' + gifts + '개 SKU는 점검 대상에서 제외</b>(브랜드 \'사은품\'으로 집계)했습니다.' : '') + '</p></div><div class="acts"><button class="btn" id="csv"' + (na.length ? '' : ' disabled') + '>CSV</button><button class="btn pri" id="upM">최신 원본 업로드</button></div></div>' +
     (na.length ? '<div class="msg err"><b>N/A SKU ' + na.length + '개 · 매출 ' + fmt(g) + '원</b><br><span style="font-size:11px">원본(자재마스터)에 없는 SKU입니다. 아래에서 브랜드를 입력하고 SKU ID를 체크한 뒤 <b>선택 항목 일괄 적용</b>을 누르세요. 이후 최신 원본에 해당 SKU가 들어오면 원본 값이 우선 적용되고 수동 지정은 자동 해제됩니다.</span></div>' : '<div class="msg ok"><b>✓ N/A가 없습니다.</b> 모든 매출 SKU가 원본 또는 수동 지정으로 매칭되었습니다.</div>') +
     '<datalist id="dlB">' + brands.map((b) => '<option value="' + esc(b) + '">').join('') + '</datalist>' +
     (na.length ? '<div class="grid2"><div class="card ch"><h3>CSV 브랜드별 N/A</h3><p class="d">어느 브랜드 원본을 갱신해야 하는지 확인하세요</p>' + barList([...byCb.entries()].sort((a, b) => b[1].gmv - a[1].gmv).map(([k, a]) => [k + ' (' + a.n + ')', a]), 'gmv') + '</div><div class="card ops"><h3 style="margin:0 0 6px;font-size:15px">요약</h3><div class="it">N/A SKU<b>' + na.length + '<small>개</small></b></div><div class="it">N/A 매출<b>' + fmt(g) + '<small>원</small></b></div><div class="it">전체 매출 대비<b>' + pct(g / (S.sales.reduce((a, r) => a + r.gmv, 0) || 1) * 100, 2) + '</b></div></div></div>' +
@@ -751,7 +755,7 @@ function bind() {
 }
 
 /* ============================== 업로드 처리 ============================== */
-async function persist() { await DB.set('sales', S.sales.map((r) => { const { b, g, st, na, mc, man, seg, ...o } = r; return o; })); await DB.set('masters', S.masters); await DB.set('alias', S.alias); await DB.set('manual', S.manual); }
+async function persist() { await DB.set('sales', S.sales.map((r) => { const { b, g, st, na, mc, man, seg, gift, ...o } = r; return o; })); await DB.set('masters', S.masters); await DB.set('alias', S.alias); await DB.set('manual', S.manual); }
 async function handleFiles(files, hint) {
   if (!files.length) return; const log = []; let hasNew = false;
   try {
