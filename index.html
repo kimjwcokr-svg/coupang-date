@@ -246,6 +246,12 @@
   .fl:last-child { border-bottom:0; }
   .fl .sp { margin-left:auto; display:flex; gap:8px; align-items:center; color: var(--muted); font-size:11px; }
   svg text { font-family: inherit; }
+  rect.dbar { cursor: pointer; transition: filter .1s; }
+  rect.dbar:hover { filter: brightness(.82); }
+  #ctip { position: fixed; z-index: 60; pointer-events: none; display: none; background: #111827; color: #fff; border-radius: 8px; padding: 10px 12px; font-size: 11.5px; line-height: 1.6; box-shadow: 0 8px 24px rgba(0,0,0,.18); white-space: nowrap; }
+  #ctip b { display: block; font-size: 12px; margin-bottom: 2px; }
+  #ctip .g { font-size: 15px; font-weight: 800; color: #7FD1B5; }
+  #ctip span { color: #B4BAC2; }
   .ov .bx .msg b { display: inline; margin: 0; }
 </style>
 </head>
@@ -271,12 +277,19 @@
 </div>
 <input type="file" id="fileSales" multiple accept=".csv,.tsv,.txt,.xlsx,.xlsm" hidden>
 <input type="file" id="fileMaster" multiple accept=".xlsx,.xlsm" hidden>
+<div id="ctip"></div>
 <div class="ov" id="ov"><div class="bx"><b id="ovT">작업 중…</b><small id="ovS"></small><div class="bar"><i id="ovB"></i></div></div></div>
 <div class="ov modal" id="saveDlg"><div class="bx">
   <b style="font-size:15px">데이터 포함 파일로 저장</b>
   <div class="fld" style="margin:14px 0 10px"><label>파일 이름</label><div style="display:flex;align-items:center;gap:6px"><input id="saveName" style="flex:1;height:36px;border:1px solid var(--line);border-radius:6px;padding:0 10px"><span style="color:var(--muted)">.html</span></div></div>
   <div class="msg warn" id="saveHint" style="font-size:11.5px;line-height:1.7;margin:0 0 16px"></div>
   <div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap"><button class="btn" id="saveCancel">취소</button><button class="btn" id="savePick" style="display:none">📁 저장 위치 선택…</button><button class="btn pri" id="saveOk">폴더에 저장</button></div>
+</div></div>
+<div class="ov modal" id="resetDlg"><div class="bx">
+  <b style="font-size:15px">데이터를 완전히 초기화할까요?</b>
+  <div class="msg err" style="font-size:12px;line-height:1.8;margin:14px 0 10px">아래 데이터가 <b>모두 삭제</b>되며 <b>되돌릴 수 없습니다.</b><ul id="resetList" style="margin:6px 0 0;padding-left:18px;color:inherit;font-size:12px"></ul></div>
+  <p style="font-size:11.5px;color:var(--sub);margin:0 0 16px;line-height:1.7">나중에 다시 필요할 수 있다면 먼저 <b style="display:inline">💾 저장</b>으로 데이터 포함 파일을 만들어 두세요.</p>
+  <div style="display:flex;justify-content:flex-end;gap:8px"><button class="btn" id="resetCancel">취소</button><button class="btn" id="resetOk" style="background:var(--err-text);border-color:var(--err-text);color:#fff">완전 초기화</button></div>
 </div></div>
 <div class="ov modal" id="help"><div class="bx">
   <b style="font-size:15px">사용 안내</b>
@@ -512,10 +525,11 @@ function aggBy(rows, fn) { const m = new Map(); for (const r of rows) { const k 
 function total(rows) { const a = ZERO(); for (const r of rows) add(a, r); a.skus = new Set(rows.map((r) => r.sku)).size; return a; }
 const delta = (cur, prev) => prev ? (cur - prev) / prev * 100 : null;
 function deltaHTML(d) { if (d == null) return '<span style="color:var(--muted)">비교 없음</span>'; return '<b class="' + (d >= 0 ? 'up' : 'down') + '">' + (d >= 0 ? '▲ ' : '▼ ') + Math.abs(d).toFixed(1) + '%</b>'; }
-function naSummary() {
+function naSummary(withZero) {
   const m = new Map();
   for (const r of S.sales) if (r.na) { let a = m.get(r.sku); if (!a) { a = { sku: r.sku, bc: r.bc, name: r.name, cb: r.cb, gmv: 0, qty: 0, days: new Set(), last: '' }; m.set(r.sku, a); } a.gmv += r.gmv; a.qty += r.qty; a.days.add(r.d); if (r.d > a.last) a.last = r.d; }
-  return [...m.values()].sort((a, b) => b.gmv - a.gmv);
+  const all = [...m.values()].sort((a, b) => b.gmv - a.gmv);
+  return withZero ? all : all.filter((a) => Math.round(a.gmv) !== 0);   // GMV 0원 SKU 제외
 }
 
 /* ============================== UI helpers ============================== */
@@ -570,7 +584,7 @@ function dailyChart(rows, start, end) {
   let pts = '';
   vals.forEach((v, i) => {
     const x = i * bw + bw * 0.18, w = bw * 0.64, yy = y(v.gmv); const wk = parseYmd(days[i]).getUTCDay();
-    svg += '<rect x="' + x + '" y="' + yy + '" width="' + w + '" height="' + Math.max(0, H - pb - yy) + '" fill="' + (wk === 0 || wk === 6 ? '#8CC5B0' : 'var(--teal2)') + '" rx="2"><title>' + days[i] + ' (' + WD[wk] + ')\nGMV ' + fmt(v.gmv) + '원\nAMV ' + fmt(v.amv) + '원\n판매수량 ' + fmt(v.qty) + '</title></rect>';
+    svg += '<rect x="' + x + '" y="' + yy + '" width="' + w + '" height="' + Math.max(0, H - pb - yy) + '" fill="' + (wk === 0 || wk === 6 ? '#8CC5B0' : 'var(--teal2)') + '" rx="2" class="dbar" data-d="' + days[i] + ' (' + WD[wk] + ')" data-g="' + Math.round(v.gmv) + '" data-a="' + Math.round(v.amv) + '" data-q="' + Math.round(v.qty) + '" data-o="' + Math.round(v.orders) + '"></rect>';
     pts += (i ? 'L' : 'M') + (i * bw + bw / 2) + ' ' + y(v.amv) + ' ';
     if (days.length <= 45 || i % Math.ceil(days.length / 30) === 0) svg += '<text x="' + (i * bw + bw / 2) + '" y="' + (H - 16) + '" font-size="9.5" fill="#8A929E" text-anchor="middle">' + days[i].slice(5) + '</text><text x="' + (i * bw + bw / 2) + '" y="' + (H - 4) + '" font-size="9" fill="#B4BAC2" text-anchor="middle">' + WD[wk] + '</text>';
   });
@@ -635,7 +649,7 @@ function segGmvHTML(cur, t) {
 }
 function periodKey(d) { return S.f.unit === 'month' ? d.slice(0, 7) : d; }
 function vBrand() {
-  ensureRange(); const f = S.f; const all0 = filtered(f.start, f.end); const cur = all0.filter((r) => !isGift(r.name));
+  ensureRange(); const f = S.f; const all0 = filtered(f.start, f.end); const cur = all0.filter((r) => !isGift(r.name) && !(r.na && Math.round(r.gmv) === 0));
   const giftN = new Set(all0.filter((r) => isGift(r.name)).map((r) => r.sku)).size;
   const keysSet = new Set(cur.map((r) => periodKey(r.d))); let keys = [...keysSet].sort();
   const gm = new Map(); // group -> {tot, per:Map, children: Map(brand -> {tot, per})}
@@ -649,7 +663,7 @@ function vBrand() {
   const lab = (k) => S.f.unit === 'month' ? k.slice(2).replace('-', '.') : k.slice(5) + '(' + WD[parseYmd(k).getUTCDay()] + ')';
   const cell = (m, k) => '<td>' + (m.get(k) ? fmt(m.get(k).gmv) : '<span style="color:#C5CAD1">-</span>') + '</td>';
   const sg = new Map(); for (const r of cur) { let a = sg.get(r.seg); if (!a) { a = { tot: ZERO(), per: new Map() }; sg.set(r.seg, a); } add(a.tot, r); const k = periodKey(r.d); let b = a.per.get(k); if (!b) { b = ZERO(); a.per.set(k, b); } add(b, r); }
-  let body = '';
+  let body = '<tr class="sum"><td class="l fc">전체 합계</td><td>' + fmt(all.gmv) + '</td><td>100%</td>' + keys.map((k) => cell(allPer, k)).join('') + '</tr>';
   for (const [sk, nm] of [['PRE', 'PRE 프리미엄 합계'], ['LUX', 'LUX 럭셔리 합계'], ['', '미분류(N/A) 합계']]) {
     const a = sg.get(sk); if (!a) continue;
     body += '<tr class="sum"><td class="l fc' + (sk === '' ? ' na' : '') + '">' + nm + '</td><td>' + fmt(a.tot.gmv) + '</td><td>' + pct(a.tot.gmv / (all.gmv || 1) * 100) + '</td>' + keys.map((k) => cell(a.per, k)).join('') + '</tr>';
@@ -661,7 +675,6 @@ function vBrand() {
         body += '<tr class="ch"><td class="l fc">' + esc(b) + '</td><td>' + fmt(c.tot.gmv) + '</td><td>' + pct(c.tot.gmv / (all.gmv || 1) * 100) + '</td>' + keys.map((k) => cell(c.per, k)).join('') + '</tr>';
     }
   }
-  body += '<tr class="sum"><td class="l fc">전체 합계</td><td>' + fmt(all.gmv) + '</td><td>100%</td>' + keys.map((k) => cell(allPer, k)).join('') + '</tr>';
   return '<div class="ph"><div><div class="eyebrow">BRAND REPORT</div><h1>브랜드별 매출</h1><p>원본 SKU 매칭 기준 · 대분류 아래 하위 그룹별로 분리 (GMV, 원)</p></div><div class="acts"><button class="btn" id="xl">엑셀 다운로드</button><button class="btn" id="csv">CSV</button></div></div>' +
     naBanner() + filterBar({ unit: 1 }) +
     '<div class="card tc"><div class="th"><div><h3>브랜드 × ' + (f.unit === 'month' ? '월' : '일') + '별 GMV</h3><p class="d">N/A = 원본 데이터에 SKU가 없는 상품' + (giftN ? ' · 사은품 ' + giftN + '개 SKU 제외' : '') + '</p></div></div><div class="tw"><table class="t"><thead><tr><th class="l fc">브랜드</th><th>합계</th><th>비중</th>' + keys.map((k) => '<th>' + lab(k) + '</th>').join('') + '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
@@ -698,7 +711,8 @@ function vNa() {
   const mrows = new Map(); for (const r of S.sales) if (r.man) { let a = mrows.get(r.sku); if (!a) { a = { sku: r.sku, name: r.name, cb: r.cb, b: r.b, seg: r.seg, gmv: 0, qty: 0 }; mrows.set(r.sku, a); } a.gmv += r.gmv; a.qty += r.qty; }
   const man = [...mrows.values()].sort((a, b) => b.gmv - a.gmv);
   const gifts = new Set(S.sales.filter((r) => r.gift).map((r) => r.sku)).size;
-  return '<div class="ph"><div><div class="eyebrow">N/A CHECK</div><h1>N/A 점검</h1><p>업로드된 원본(' + mi + ')에서 SKU ID를 찾지 못한 상품입니다. 브랜드를 직접 지정해 해소할 수 있습니다.' + (gifts ? ' <b>사은품 ' + gifts + '개 SKU는 점검 대상에서 제외</b>(브랜드 \'사은품\'으로 집계)했습니다.' : '') + '</p></div><div class="acts"><button class="btn" id="csv"' + (na.length ? '' : ' disabled') + '>CSV</button><button class="btn pri" id="upM">최신 원본 업로드</button></div></div>' +
+  const zeroN = naSummary(true).length - na.length;
+  return '<div class="ph"><div><div class="eyebrow">N/A CHECK</div><h1>N/A 점검</h1><p>업로드된 원본(' + mi + ')에서 SKU ID를 찾지 못한 상품입니다. 브랜드를 직접 지정해 해소할 수 있습니다.' + (gifts ? ' <b>사은품 ' + gifts + '개 SKU는 점검 대상에서 제외</b>(브랜드 \'사은품\'으로 집계)했습니다.' : '') + (zeroN ? ' <b>GMV 0원 SKU ' + zeroN + '개도 제외</b>했습니다.' : '') + '</p></div><div class="acts"><button class="btn" id="csv"' + (na.length ? '' : ' disabled') + '>CSV</button><button class="btn pri" id="upM">최신 원본 업로드</button></div></div>' +
     (na.length ? '<div class="msg err"><b>N/A SKU ' + na.length + '개 · 매출 ' + fmt(g) + '원</b><br><span style="font-size:11px">원본(자재마스터)에 없는 SKU입니다. 아래에서 브랜드를 입력하고 SKU ID를 체크한 뒤 <b>선택 항목 일괄 적용</b>을 누르세요. 이후 최신 원본에 해당 SKU가 들어오면 원본 값이 우선 적용되고 수동 지정은 자동 해제됩니다.</span></div>' : '<div class="msg ok"><b>✓ N/A가 없습니다.</b> 모든 매출 SKU가 원본 또는 수동 지정으로 매칭되었습니다.</div>') +
     '<datalist id="dlB">' + brands.map((b) => '<option value="' + esc(b) + '">').join('') + '</datalist>' +
     (na.length ? '<div class="grid2"><div class="card ch"><h3>CSV 브랜드별 N/A</h3><p class="d">어느 브랜드 원본을 갱신해야 하는지 확인하세요</p>' + barList([...byCb.entries()].sort((a, b) => b[1].gmv - a[1].gmv).map(([k, a]) => [k + ' (' + a.n + ')', a]), 'gmv') + '</div><div class="card ops"><h3 style="margin:0 0 6px;font-size:15px">요약</h3><div class="it">N/A SKU<b>' + na.length + '<small>개</small></b></div><div class="it">N/A 매출<b>' + fmt(g) + '<small>원</small></b></div><div class="it">전체 매출 대비<b>' + pct(g / (S.sales.reduce((a, r) => a + r.gmv, 0) || 1) * 100, 2) + '</b></div></div></div>' +
@@ -742,7 +756,7 @@ function vUpload() {
   const bs = {}; for (const s of ['PRE', 'LUX']) if (S.masters[s]) for (const r of S.masters[s].rows) bs[r.brand] = 1;
   const salesBrands = new Set(S.sales.map((r) => r.b)); const nameSet = Object.keys(bs).sort();
   return '<div class="ph"><div><div class="eyebrow">DATA</div><h1>데이터 관리</h1><p>파일명이 바뀌어도 내용으로 자동 인식합니다. 같은 날짜의 매출은 새 파일로 교체됩니다.</p></div></div>' + naBanner() +
-    '<div class="card conn"><div class="hd"><div><h3 style="margin:0;font-size:15px">데이터 업로드</h3><p class="d" style="margin:4px 0 0;font-size:11.5px;color:var(--muted)">끌어놓거나 클릭해서 선택 (여러 파일 가능)</p></div><span class="steps">STEP 1 · 2</span></div><div class="drops">' +
+    '<div class="card conn"><div class="hd"><div><h3 style="margin:0;font-size:15px">데이터 업로드</h3><p class="d" style="margin:4px 0 0;font-size:11.5px;color:var(--muted)">끌어놓거나 클릭해서 선택 (여러 파일 가능)</p></div><div style="margin-left:auto;display:flex;align-items:center;gap:14px"><button class="btn sm red" id="resetAll"' + (S.sales.length || hasMaster() ? '' : ' disabled') + '>초기화</button><span class="steps" style="margin-left:0">STEP 1 · 2</span></div></div><div class="drops">' +
     '<div class="drop p" id="dM"><div class="x">원</div><div><b>원본 데이터 (자재마스터)</b><small>PRE · LUX 자재마스터 xlsx — 두 파일 모두 선택 가능</small><small>PRE/LUX는 자동 구분, 같은 구분은 최신 파일로 교체</small><div class="st">' + (S.masters.PRE ? 'PRE ✓ ' : '') + (S.masters.LUX ? 'LUX ✓' : '') + '</div></div><span class="ar">→</span></div>' +
     '<div class="drop" id="dS"><div class="x">매출</div><div><b>매출 데이터 (CSV)</b><small>SALES_ANALYSIS_DAILY_PERFORMANCE_*.csv</small><small>파일의 날짜 데이터는 덮어쓰고, 다른 날짜는 누적 보관</small><div class="st">' + (ds.length ? ds[0] + ' ~ ' + ds[ds.length - 1] + ' (' + ds.length + '일)' : '') + '</div></div><span class="ar">→</span></div></div>' +
     '<div class="ft"><span>데이터는 이 브라우저에만 저장되며 서버로 전송되지 않습니다.</span></div></div>' +
@@ -763,7 +777,17 @@ function render() {
   else p.innerHTML = ({ upload: vUpload, dash: vDash, brand: vBrand, sku: vSku, na: vNa })[S.view]();
   bind();
 }
+function bindChartTip() {
+  const tip = $('#ctip'); if (!tip) return;
+  const place = (e) => { const r = tip.getBoundingClientRect(); let x = e.clientX + 14, y = e.clientY - r.height - 12; if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 14; if (y < 8) y = e.clientY + 18; tip.style.left = x + 'px'; tip.style.top = y + 'px'; };
+  document.querySelectorAll('rect.dbar').forEach((b) => {
+    b.onmouseenter = (e) => { const d = b.dataset; tip.innerHTML = '<b>' + d.d + '</b><div class="g">' + fmt(+d.g) + '원</div><div><span>AMV</span> ' + fmt(+d.a) + '원</div><div><span>판매수량</span> ' + fmt(+d.q) + '개 · <span>주문</span> ' + fmt(+d.o) + '건</div>'; tip.style.display = 'block'; place(e); };
+    b.onmousemove = place;
+    b.onmouseleave = () => { tip.style.display = 'none'; };
+  });
+}
 function bind() {
+  const tip = $('#ctip'); if (tip) tip.style.display = 'none'; bindChartTip();
   bindGo(); if ($('#fGo')) bindFilter();
   const x = $('#xl'); if (x) x.onclick = exportXlsx;
   const c = $('#csv'); if (c) c.onclick = exportCsv;
@@ -789,6 +813,20 @@ function bind() {
   };
   document.querySelectorAll('[data-unman]').forEach((b) => b.onclick = async () => { delete S.manual[b.dataset.unman]; await reapply(); });
   const mc = $('#manClr'); if (mc) mc.onclick = async () => { if (!confirm('수동 지정을 모두 해제할까요?')) return; S.manual = {}; await reapply(); };
+  const ra = $('#resetAll'); if (ra) ra.onclick = () => {
+    const ds = dates(); const dlg = $('#resetDlg');
+    $('#resetList').innerHTML = '<li>매출 데이터 ' + fmt(S.sales.length) + '행' + (ds.length ? ' (' + ds[0] + ' ~ ' + ds[ds.length - 1] + ', ' + ds.length + '일)' : '') + '</li>' +
+      '<li>원본 데이터 ' + (['PRE', 'LUX'].filter((k) => S.masters[k]).join(' · ') || '없음') + '</li><li>브랜드 분류 설정 (기본값으로 되돌림)</li><li>N/A 수동 지정 ' + Object.keys(S.manual).length + '건</li>';
+    dlg.classList.add('on');
+    $('#resetCancel').onclick = () => dlg.classList.remove('on');
+    $('#resetOk').onclick = async () => {
+      dlg.classList.remove('on');
+      S.sales = []; S.masters = {}; S.map = clone(DEFAULT_MAP); S.manual = {}; S.mapDraft = null; S.draft = { v: {}, seg: {}, chk: new Set() };
+      S.f = { start: '', end: '', group: '', unit: 'day', q: '' }; S.page.sku = 0;
+      rebuildIndex(); await persist(); setSaveInfo('브라우저 로컬 처리'); go('upload');
+      const box = document.createElement('div'); box.className = 'msg ok'; box.textContent = '✓ 모든 데이터를 초기화했습니다. 원본과 매출 파일을 다시 올려 주세요.'; $('#page').insertBefore(box, $('#page').children[1] || null);
+    };
+  };
   const cs = $('#clrS'); if (cs) cs.onclick = async () => { if (!confirm('저장된 매출 데이터를 모두 삭제할까요?')) return; S.sales = []; await persist(); render(); };
   document.querySelectorAll('input[data-mb]').forEach((i) => i.oninput = () => {
     const raw = i.dataset.raw; const d = S.mapDraft[raw] || (S.mapDraft[raw] = effMap(raw)); d[i.dataset.mb] = i.value.trim();
@@ -858,7 +896,7 @@ function exportXlsx() {
     br.push([nm, '', '', items.reduce((x, a) => x + a.t, 0), ...keys.map(per)]);
     items.sort((a, b) => (gt.get(b.g) - gt.get(a.g)) || a.g.localeCompare(b.g, 'ko') || b.t - a.t).forEach((a) => br.push([sk || '미분류', a.g, a.b === a.g ? '' : a.b, a.t, ...keys.map((k) => a.per.get(k) || 0)]));
   }
-  br.push(['전체 합계', '', '', cur.reduce((x, r) => x + r.gmv, 0), ...keys.map((k) => [...gm.values()].reduce((x, a) => x + (a.per.get(k) || 0), 0))]);
+  br.splice(1, 0, ['전체 합계', '', '', cur.reduce((x, r) => x + r.gmv, 0), ...keys.map((k) => [...gm.values()].reduce((x, a) => x + (a.per.get(k) || 0), 0))]);
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(br), '브랜드별매출');
   const sk = skuRows(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['SKU ID', 'SKU 명', '브랜드', '그룹', 'PRE/LUX', '원본구분', 'GMV', 'AMV', '판매수량', '주문건수', '조회수'], ...sk.map((a) => [a.sku, a.name, a.b, a.g, a.seg, a.st, a.gmv, a.amv, a.qty, a.orders, a.views])]), 'SKU상세');
   const na = naSummary(); XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['SKU ID', 'SKU 명', 'CSV 브랜드', '바코드', 'GMV', '판매수량', '판매일수', '최근판매일'], ...na.map((r) => [r.sku, r.name, r.cb, r.bc, r.gmv, r.qty, r.days.size, r.last])]), 'NA점검');
