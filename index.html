@@ -525,10 +525,11 @@ function aggBy(rows, fn) { const m = new Map(); for (const r of rows) { const k 
 function total(rows) { const a = ZERO(); for (const r of rows) add(a, r); a.skus = new Set(rows.map((r) => r.sku)).size; return a; }
 const delta = (cur, prev) => prev ? (cur - prev) / prev * 100 : null;
 function deltaHTML(d) { if (d == null) return '<span style="color:var(--muted)">비교 없음</span>'; return '<b class="' + (d >= 0 ? 'up' : 'down') + '">' + (d >= 0 ? '▲ ' : '▼ ') + Math.abs(d).toFixed(1) + '%</b>'; }
-function naSummary() {
+function naSummary(withZero) {
   const m = new Map();
   for (const r of S.sales) if (r.na) { let a = m.get(r.sku); if (!a) { a = { sku: r.sku, bc: r.bc, name: r.name, cb: r.cb, gmv: 0, qty: 0, days: new Set(), last: '' }; m.set(r.sku, a); } a.gmv += r.gmv; a.qty += r.qty; a.days.add(r.d); if (r.d > a.last) a.last = r.d; }
-  return [...m.values()].sort((a, b) => b.gmv - a.gmv);
+  const all = [...m.values()].sort((a, b) => b.gmv - a.gmv);
+  return withZero ? all : all.filter((a) => Math.round(a.gmv) !== 0);   // GMV 0원 SKU 제외
 }
 
 /* ============================== UI helpers ============================== */
@@ -648,7 +649,7 @@ function segGmvHTML(cur, t) {
 }
 function periodKey(d) { return S.f.unit === 'month' ? d.slice(0, 7) : d; }
 function vBrand() {
-  ensureRange(); const f = S.f; const all0 = filtered(f.start, f.end); const cur = all0.filter((r) => !isGift(r.name));
+  ensureRange(); const f = S.f; const all0 = filtered(f.start, f.end); const cur = all0.filter((r) => !isGift(r.name) && !(r.na && Math.round(r.gmv) === 0));
   const giftN = new Set(all0.filter((r) => isGift(r.name)).map((r) => r.sku)).size;
   const keysSet = new Set(cur.map((r) => periodKey(r.d))); let keys = [...keysSet].sort();
   const gm = new Map(); // group -> {tot, per:Map, children: Map(brand -> {tot, per})}
@@ -710,7 +711,8 @@ function vNa() {
   const mrows = new Map(); for (const r of S.sales) if (r.man) { let a = mrows.get(r.sku); if (!a) { a = { sku: r.sku, name: r.name, cb: r.cb, b: r.b, seg: r.seg, gmv: 0, qty: 0 }; mrows.set(r.sku, a); } a.gmv += r.gmv; a.qty += r.qty; }
   const man = [...mrows.values()].sort((a, b) => b.gmv - a.gmv);
   const gifts = new Set(S.sales.filter((r) => r.gift).map((r) => r.sku)).size;
-  return '<div class="ph"><div><div class="eyebrow">N/A CHECK</div><h1>N/A 점검</h1><p>업로드된 원본(' + mi + ')에서 SKU ID를 찾지 못한 상품입니다. 브랜드를 직접 지정해 해소할 수 있습니다.' + (gifts ? ' <b>사은품 ' + gifts + '개 SKU는 점검 대상에서 제외</b>(브랜드 \'사은품\'으로 집계)했습니다.' : '') + '</p></div><div class="acts"><button class="btn" id="csv"' + (na.length ? '' : ' disabled') + '>CSV</button><button class="btn pri" id="upM">최신 원본 업로드</button></div></div>' +
+  const zeroN = naSummary(true).length - na.length;
+  return '<div class="ph"><div><div class="eyebrow">N/A CHECK</div><h1>N/A 점검</h1><p>업로드된 원본(' + mi + ')에서 SKU ID를 찾지 못한 상품입니다. 브랜드를 직접 지정해 해소할 수 있습니다.' + (gifts ? ' <b>사은품 ' + gifts + '개 SKU는 점검 대상에서 제외</b>(브랜드 \'사은품\'으로 집계)했습니다.' : '') + (zeroN ? ' <b>GMV 0원 SKU ' + zeroN + '개도 제외</b>했습니다.' : '') + '</p></div><div class="acts"><button class="btn" id="csv"' + (na.length ? '' : ' disabled') + '>CSV</button><button class="btn pri" id="upM">최신 원본 업로드</button></div></div>' +
     (na.length ? '<div class="msg err"><b>N/A SKU ' + na.length + '개 · 매출 ' + fmt(g) + '원</b><br><span style="font-size:11px">원본(자재마스터)에 없는 SKU입니다. 아래에서 브랜드를 입력하고 SKU ID를 체크한 뒤 <b>선택 항목 일괄 적용</b>을 누르세요. 이후 최신 원본에 해당 SKU가 들어오면 원본 값이 우선 적용되고 수동 지정은 자동 해제됩니다.</span></div>' : '<div class="msg ok"><b>✓ N/A가 없습니다.</b> 모든 매출 SKU가 원본 또는 수동 지정으로 매칭되었습니다.</div>') +
     '<datalist id="dlB">' + brands.map((b) => '<option value="' + esc(b) + '">').join('') + '</datalist>' +
     (na.length ? '<div class="grid2"><div class="card ch"><h3>CSV 브랜드별 N/A</h3><p class="d">어느 브랜드 원본을 갱신해야 하는지 확인하세요</p>' + barList([...byCb.entries()].sort((a, b) => b[1].gmv - a[1].gmv).map(([k, a]) => [k + ' (' + a.n + ')', a]), 'gmv') + '</div><div class="card ops"><h3 style="margin:0 0 6px;font-size:15px">요약</h3><div class="it">N/A SKU<b>' + na.length + '<small>개</small></b></div><div class="it">N/A 매출<b>' + fmt(g) + '<small>원</small></b></div><div class="it">전체 매출 대비<b>' + pct(g / (S.sales.reduce((a, r) => a + r.gmv, 0) || 1) * 100, 2) + '</b></div></div></div>' +
